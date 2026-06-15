@@ -1,0 +1,27 @@
+# Optional: run Postgres + pgvector via Docker instead of Homebrew.
+# Local development defaults to Homebrew postgresql@16 (see scripts/db-setup.sh).
+# Use this only if you prefer a containerized, production-like database.
+#
+#   docker compose up -d
+#
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: knowledgeops-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-knowledgeops}
+      POSTGRES_USER: ${POSTGRES_USER:-knowledgeops}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-knowledgeops}
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-knowledgeops} -d ${POSTGRES_DB:-knowledgeops}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

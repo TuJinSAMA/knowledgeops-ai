@@ -1,0 +1,24 @@
+{
+  "name": "knowledgeops-ai",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Enterprise AI knowledge quality platform for building, evaluating, and operating trustworthy RAG-powered knowledge assistants.",
+  "packageManager": "pnpm@10.15.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["esbuild", "sharp", "unrs-resolver"]
+  },
+  "scripts": {
+    "dev:web": "pnpm --filter @knowledgeops/web dev",
+    "build:web": "pnpm --filter @knowledgeops/web build",
+    "db:generate": "pnpm --filter @knowledgeops/web db:generate",
+    "db:migrate": "pnpm --filter @knowledgeops/web db:migrate",
+    "db:push": "pnpm --filter @knowledgeops/web db:push",
+    "db:studio": "pnpm --filter @knowledgeops/web db:studio",
+    "db:setup": "bash scripts/db-setup.sh",
+    "ai:dev": "bash scripts/ai-dev.sh",
+    "ai:worker": "bash scripts/ai-worker.sh"
+  }
+}
