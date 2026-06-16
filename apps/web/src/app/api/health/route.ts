@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 
 import { db } from "@/db";
 import { env } from "@/env";
+import { getRedis } from "@/lib/redis";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +23,17 @@ export async function GET() {
       : { ok: false, detail: "extension not installed" };
   } catch (error) {
     checks.database = {
+      ok: false,
+      detail: error instanceof Error ? error.message : "unknown error",
+    };
+  }
+
+  // Redis connectivity.
+  try {
+    const pong = await getRedis().ping();
+    checks.redis = { ok: pong === "PONG", detail: "connected" };
+  } catch (error) {
+    checks.redis = {
       ok: false,
       detail: error instanceof Error ? error.message : "unknown error",
     };

@@ -247,28 +247,34 @@ Postgres + pgvector ◀──── Python worker   Python AI service (FastAPI)
 
 MVP 阶段，Python AI service 与 worker 可以是**同一代码库的两个入口**（一个 FastAPI 进程 + 一个 worker 循环），减少部署组件；待规模上来再拆分独立扩缩容。
 
-建议技术栈：
+技术栈（已落地；标注 `(planned)` 的为方向已定但尚未接入）：
 
-- Frontend: Next.js, React, Tailwind, shadcn/ui
+- Monorepo: pnpm workspace（`apps/web` + `services/ai`）
+- Frontend: Next.js (App Router) + React + Tailwind；shadcn/ui `(planned)`
 - Web/business backend: Next.js API routes / server actions
-- AI service: Python + FastAPI
+- AI service: Python + FastAPI，依赖用 uv 管理
 - Background worker: 独立 Python 进程，不跑在 Web 请求进程里
-- Database: Postgres
-- Vector search: pgvector（MVP 阶段足够；规模化后再评估是否引入专用向量库，不在早期提前优化）
-- DB access: Web 侧用 Drizzle ORM；Python 侧用 SQLAlchemy / SQLModel
-- Queue: 基于 Postgres 的 job 表 + `SELECT ... FOR UPDATE SKIP LOCKED`
-- Auth: Auth.js (NextAuth) 或 better-auth
-- AI providers: Python 侧用 litellm 或各家官方 SDK 做 provider 抽象；Next.js 侧若需要直接流式回答，用 Vercel AI SDK
-- Observability: 先用自建 trace 表，Langfuse 等工具后续按需引入
+- Database: PostgreSQL 16（本地用 Homebrew；`docker-compose.yml` 提供 pgvector 镜像作为可选）
+- Vector search: pgvector（embedding 维度 1536，web 与 Python 两侧保持一致；规模化后再评估专用向量库，不在早期提前优化）
+- DB access: Web 侧用 Drizzle ORM（拥有 migrations）；Python 侧用 SQLAlchemy + psycopg3（只读写，不执行 migration）
+- Queue: 基于 Postgres 的 job 表（`ingestion_jobs`）+ `SELECT ... FOR UPDATE SKIP LOCKED`
+- Auth: better-auth（email + password 起步，后续可扩展 social / SSO）
+- Cache / Redis: Redis 从 MVP 起引入（`redis:7-alpine`）；Web 侧用 `ioredis`，Python 侧用 `redis-py + hiredis`；承担 rate limiting、quota 原子计数、session 缓存、AI 响应缓存四项职责；`REDIS_URL` 支持 standalone / Sentinel / 托管云（Upstash 等）覆盖；私有化部署时为必须依赖，rate limiting 和 quota 层通过抽象接口提供 Postgres fallback，保障 Redis 短暂不可达时系统可降级运行
+- AI providers: Python 侧用 litellm 或各家官方 SDK 做 provider 抽象 `(planned)`；Next.js 侧若需实时流式回答，用 Vercel AI SDK `(planned)`
+- Observability: 自建 trace 表 `(planned)`，Langfuse 等工具后续按需引入
+- Config: 每个服务各自持有 `.env`，`POSTGRES_*` 为单一真相、`DATABASE_URL` 由其派生（可用显式 `DATABASE_URL` 覆盖，便于生产托管库）
+
+具体的目录结构与本地启动命令见 `README.md`，不在此重复。
 
 选型理由与约束：
 
 - **RAG 核心必须单一实现（最重要的约束）。** evaluation 的价值在于真实反映线上配置，如果实时 chat 和 evaluation 各用一套检索实现，评估结果就对不上线上，整个 evaluation 闭环失去意义。因此 retrieval / answer 逻辑只在 Python AI service 中实现一次，实时与批量都复用它。
 - **为什么 Web 层用 TS、AI 层用 Python。** auth、multi-tenant、RBAC、CRUD、配额、审计这类业务编排用 Python 没有收益，反而失去端到端类型；而 chunking、embedding、retrieval、reranking、evaluation 以及 LangChain / LangGraph 生态在 Python 明显更强。按这条边界分工，两个生态的优势都能拿到。
 - **数据库 schema 单一归属。** 为避免双写 schema 混乱，migrations 由 Web 侧（Drizzle）统一拥有，作为 schema 的单一真相；Python 侧只读写约定的表，不执行 migration。
-- **Auth：选 Auth.js / better-auth，不优先 Clerk。** 产品目标包含私有化部署、multi-tenant workspace、RBAC 和从 IdP 同步权限，而 Clerk 是托管 SaaS，自托管能力弱，与私有化部署直接冲突。`workspace`、`member`、`role` 等核心身份模型必须由本项目掌控并存放在自己的 Postgres 中，这也符合"核心逻辑不外包给框架"的原则。Clerk 仅在需要快速验证纯云版 MVP 时作为可选项，不作为默认。
+- **Auth：已选 better-auth，不用 Clerk。** 产品目标包含私有化部署、multi-tenant workspace、RBAC 和从 IdP 同步权限，而 Clerk 是托管 SaaS，自托管能力弱，与私有化部署直接冲突。`workspace`、`member`、`role` 等核心身份模型必须由本项目掌控并存放在自己的 Postgres 中，这也符合"核心逻辑不外包给框架"的原则。better-auth 的认证表沿用其默认形态（`user` / `session` / `account` / `verification`），这是对"snake_case 复数表名"命名约定的有意例外；业务领域表仍遵循项目命名规范。
 - **ORM：Web 侧选 Drizzle，不选 Prisma。** RAG 的核心是向量检索与复杂 SQL，而 Prisma 原生不支持 `vector` 类型，需要用 `Unsupported` + raw SQL 绕开，体验割裂。Drizzle 对 pgvector、原生 SQL 和复杂检索查询控制力更强、更轻量、迁移透明。
 - **Queue：选基于 Postgres 的 job 表，不引入额外队列中间件。** ingestion 和 batch evaluation 是本产品的核心能力。用 Postgres job 表 + `SKIP LOCKED` 既能跨语言（Next.js 入队、Python worker 消费），又天然契合已有的 `ingestionJob` / `evaluationRun` 领域模型和"job 数据显式存储"的原则，且零额外基础设施、利于私有化部署。只有当吞吐或并发要求显著上升时，才升级到 Redis + 队列方案。worker 必须是独立进程，保证 retryability 与故障隔离。
+- **Redis：从 MVP 起引入，作为必须依赖。** rate limiting 需要跨实例共享计数器，Postgres 实现有锁争用风险；quota 计数高频写入，Redis `INCRBY` 原子性优于 Postgres `UPDATE`；session 缓存减少高频 DB reads；AI 响应缓存降低重复 LLM 成本。这四项职责都是生产质量产品第一版就需要的，推迟到扩展阶段反而需要大范围改造代码。Redis 通过 `REDIS_URL` 支持本地 / Docker / 私有化 / 托管云各形态；rate limiting 和 quota 层通过抽象接口提供 Postgres fallback，保障 Redis 短暂不可达时系统可降级运行。
 
 LangChain 可以用于 document loaders、text splitters、model wrappers、provider integrations，但项目不能变成一个薄薄的 LangChain Demo。核心的数据模型、trace system、evaluation logic 和 product workflow 必须由本项目自己清晰定义和掌控。
 

@@ -25,6 +25,7 @@ function buildDatabaseUrl(): string {
 export const env = {
   databaseUrl: buildDatabaseUrl(),
   aiServiceUrl: process.env.AI_SERVICE_URL ?? "http://127.0.0.1:8000",
+  redisUrl: process.env.REDIS_URL ?? "redis://localhost:6379",
   betterAuthSecret: process.env.BETTER_AUTH_SECRET ?? "dev-insecure-secret-change-me",
   betterAuthUrl: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
 };

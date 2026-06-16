@@ -23,6 +23,9 @@ class Settings(BaseSettings):
     # Optional explicit override (e.g. managed DB in production).
     database_url_override: str | None = Field(default=None, validation_alias="DATABASE_URL")
 
+    # Redis connection URL (required; supports standalone / Sentinel / managed cloud).
+    redis_url: str = "redis://localhost:6379"
+
     # Embedding dimension; must match the web Drizzle schema.
     embedding_dimensions: int = 1536
 

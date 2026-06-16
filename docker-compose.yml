@@ -1,6 +1,6 @@
-# Optional: run Postgres + pgvector via Docker instead of Homebrew.
+# Optional: run Postgres + pgvector and Redis via Docker instead of Homebrew.
 # Local development defaults to Homebrew postgresql@16 (see scripts/db-setup.sh).
-# Use this only if you prefer a containerized, production-like database.
+# Use this if you prefer a containerized, production-like setup.
 #
 #   docker compose up -d
 #
@@ -23,5 +23,21 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: knowledgeops-redis
+    restart: unless-stopped
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redisdata:/data
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   pgdata:
+  redisdata:

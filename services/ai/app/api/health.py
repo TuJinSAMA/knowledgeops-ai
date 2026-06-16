@@ -2,13 +2,14 @@ from fastapi import APIRouter
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
+from app.cache import get_redis
 from app.db import engine
 
 router = APIRouter()
 
 
 @router.get("/health")
-def health() -> JSONResponse:
+async def health() -> JSONResponse:
     checks: dict[str, dict[str, object]] = {}
 
     try:
@@ -22,8 +23,14 @@ def health() -> JSONResponse:
             if version
             else {"ok": False, "detail": "extension not installed"}
         )
-    except Exception as exc:  # noqa: BLE001 - surface any connectivity error
+    except Exception as exc:  # noqa: BLE001
         checks["database"] = {"ok": False, "detail": str(exc)}
+
+    try:
+        pong = await get_redis().ping()
+        checks["redis"] = {"ok": bool(pong), "detail": "connected"}
+    except Exception as exc:  # noqa: BLE001
+        checks["redis"] = {"ok": False, "detail": str(exc)}
 
     ok = all(c["ok"] for c in checks.values())
     return JSONResponse(
