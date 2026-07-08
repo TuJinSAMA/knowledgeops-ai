@@ -1,9 +1,44 @@
-# Optional: run Postgres + pgvector and Redis via Docker instead of Homebrew.
-# Local development defaults to Homebrew postgresql@16 (see scripts/db-setup.sh).
-# Use this if you prefer a containerized, production-like setup.
+# Full-stack local/production-like deployment of Hameo KnowledgeOps AI.
 #
-#   docker compose up -d
+#   docker compose up --build        # build images + start the whole stack
+#   docker compose up -d postgres redis   # just the datastores (Homebrew-free dev)
 #
+# Services: postgres + redis (datastores), migrate (one-shot Drizzle migrations),
+# ai (FastAPI), worker (Python job consumer), web (Next.js).
+#
+# Out of the box this runs with the deterministic FAKE AI providers, so the full
+# §1 closed loop works WITHOUT any external API keys. To use real models, set
+# AI_PROVIDER=openrouter + OPENROUTER_API_KEY (embeddings) and LLM_PROVIDER=deepseek
+# + DEEPSEEK_API_KEY (answers) in a root .env file (NEVER commit real keys).
+#
+# Key cross-service config (see README / docs/mvp-plan.md §3.1):
+#   - INTERNAL_API_TOKEN: identical on web + ai (else AI returns 401).
+#   - AI_SERVICE_URL=http://ai:8000 inside the compose network.
+#   - FILE_STORAGE_DIR=/data/uploads on web + worker, backed by the SAME volume
+#     so uploaded files written by web are readable by the ingestion worker.
+
+x-postgres-env: &postgres-env
+  POSTGRES_HOST: postgres
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: ${POSTGRES_DB:-knowledgeops}
+  POSTGRES_USER: ${POSTGRES_USER:-knowledgeops}
+  POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-knowledgeops}
+
+x-ai-env: &ai-env
+  <<: *postgres-env
+  REDIS_URL: redis://redis:6379
+  # Shared secret for internal Web -> AI calls. Same interpolation on both
+  # sides keeps them in sync; default exercises the auth path locally.
+  INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-dev-internal-token}
+  FILE_STORAGE_DIR: /data/uploads
+  EMBEDDING_DIMENSIONS: "1536"
+  # Deterministic, offline-by-default providers (no keys required).
+  AI_PROVIDER: ${AI_PROVIDER:-fake}
+  LLM_PROVIDER: ${LLM_PROVIDER:-fake}
+  EMBEDDING_MODEL: ${EMBEDDING_MODEL:-qwen/qwen3-embedding-8b}
+  OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+  DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+
 services:
   postgres:
     image: pgvector/pgvector:pg16
@@ -38,6 +73,119 @@ services:
       timeout: 5s
       retries: 5
 
+  # One-shot: apply Drizzle migrations, then exit. The web schema is the single
+  # source of truth; ai/worker only read/write the migrated tables.
+  migrate:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      target: migrate
+    image: knowledgeops-web-migrate
+    container_name: knowledgeops-migrate
+    restart: "no"
+    environment:
+      <<: *postgres-env
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  ai:
+    build:
+      context: ./services/ai
+      dockerfile: Dockerfile
+    image: knowledgeops-ai
+    container_name: knowledgeops-ai
+    restart: unless-stopped
+    environment:
+      <<: *ai-env
+    ports:
+      - "${AI_SERVICE_PORT:-8000}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          python -c "import urllib.request,sys;
+          sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=3).status==200 else 1)"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  # Background worker: reuses the AI image, different entrypoint. Consumes the
+  # Postgres job queue (ingestion + batch evaluation). Reads uploaded files from
+  # the shared uploads volume (same FILE_STORAGE_DIR as web).
+  worker:
+    build:
+      context: ./services/ai
+      dockerfile: Dockerfile
+    image: knowledgeops-ai
+    container_name: knowledgeops-worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.worker.runner"]
+    environment:
+      <<: *ai-env
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+    image: knowledgeops-web
+    container_name: knowledgeops-web
+    restart: unless-stopped
+    environment:
+      <<: *postgres-env
+      REDIS_URL: redis://redis:6379
+      AI_SERVICE_URL: http://ai:8000
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:-dev-internal-token}
+      FILE_STORAGE_DIR: /data/uploads
+      BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:-dev-insecure-secret-change-me}
+      BETTER_AUTH_URL: ${BETTER_AUTH_URL:-http://localhost:3000}
+      NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-http://localhost:3000}
+      RATE_LIMIT_API: ${RATE_LIMIT_API:-60}
+      RATE_LIMIT_AUTH: ${RATE_LIMIT_AUTH:-20}
+      QUOTA_DAILY_TOKENS: ${QUOTA_DAILY_TOKENS:-200000}
+      QUOTA_MONTHLY_TOKENS: ${QUOTA_MONTHLY_TOKENS:-5000000}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-20971520}
+    ports:
+      - "${WEB_PORT:-3000}:3000"
+    volumes:
+      - uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+      ai:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - >-
+          node -e "require('http').get('http://localhost:3000/api/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
 volumes:
   pgdata:
   redisdata:
+  uploads:

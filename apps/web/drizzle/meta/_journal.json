@@ -8,6 +8,48 @@
       "when": 1781532171621,
       "tag": "0000_flaky_green_goblin",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1781598402504,
+      "tag": "0001_romantic_omega_flight",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1781600154378,
+      "tag": "0002_clean_wildside",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1781600859528,
+      "tag": "0003_modern_vulcan",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1781601768397,
+      "tag": "0004_noisy_random",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1781602783389,
+      "tag": "0005_absent_wind_dancer",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1781603586398,
+      "tag": "0006_cloudy_lady_ursula",
+      "breakpoints": true
     }
   ]
 }

@@ -26,6 +26,7 @@ venv/
 
 # Database / local data
 pgdata/
+data/uploads/
 *.sqlite
 *.sqlite3
 

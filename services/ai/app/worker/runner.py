@@ -1,8 +1,9 @@
 """Background worker.
 
-Polls the Postgres `ingestion_jobs` table using SELECT ... FOR UPDATE
-SKIP LOCKED so multiple worker processes can run safely. Reuses the RAG
-core for the actual work. This is the cross-language queue contract: the
+Polls the Postgres `ingestion_jobs` table (a generic job queue) using
+SELECT ... FOR UPDATE SKIP LOCKED so multiple worker processes can run
+safely. Each claimed job is routed by `job_type` to the matching handler
+(see `app.worker.dispatch`). This is the cross-language queue contract: the
 Next.js web app enqueues by inserting rows, the worker consumes here.
 """
 
@@ -15,7 +16,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import session_scope
-from app.rag.ingestion import process_ingestion_job
+from app.worker.dispatch import dispatch_job
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,7 +45,7 @@ _CLAIM_SQL = text(
         FOR UPDATE SKIP LOCKED
         LIMIT 1
     )
-    RETURNING id, document_id, payload, attempts, max_attempts
+    RETURNING id, job_type, document_id, payload, attempts, max_attempts
     """
 )
 
@@ -58,10 +59,15 @@ def _claim_and_process() -> bool:
 
         job = dict(row)
         job_id = job["id"]
-        logger.info("Processing ingestion job %s (attempt %s)", job_id, job["attempts"])
+        logger.info(
+            "Processing %s job %s (attempt %s)",
+            job["job_type"],
+            job_id,
+            job["attempts"],
+        )
 
         try:
-            process_ingestion_job(session, job)
+            dispatch_job(session, job)
             session.execute(
                 text(
                     "UPDATE ingestion_jobs SET status = 'COMPLETED', "

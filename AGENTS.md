@@ -255,12 +255,16 @@ MVP 阶段，Python AI service 与 worker 可以是**同一代码库的两个入
 - AI service: Python + FastAPI，依赖用 uv 管理
 - Background worker: 独立 Python 进程，不跑在 Web 请求进程里
 - Database: PostgreSQL 16（本地用 Homebrew；`docker-compose.yml` 提供 pgvector 镜像作为可选）
-- Vector search: pgvector（embedding 维度 1536，web 与 Python 两侧保持一致；规模化后再评估专用向量库，不在早期提前优化）
+- Vector search: pgvector（embedding 维度固定 1536，web 与 Python 两侧保持一致；规模化后再评估专用向量库，不在早期提前优化）
 - DB access: Web 侧用 Drizzle ORM（拥有 migrations）；Python 侧用 SQLAlchemy + psycopg3（只读写，不执行 migration）
 - Queue: 基于 Postgres 的 job 表（`ingestion_jobs`）+ `SELECT ... FOR UPDATE SKIP LOCKED`
 - Auth: better-auth（email + password 起步，后续可扩展 social / SSO）
 - Cache / Redis: Redis 从 MVP 起引入（`redis:7-alpine`）；Web 侧用 `ioredis`，Python 侧用 `redis-py + hiredis`；承担 rate limiting、quota 原子计数、session 缓存、AI 响应缓存四项职责；`REDIS_URL` 支持 standalone / Sentinel / 托管云（Upstash 等）覆盖；私有化部署时为必须依赖，rate limiting 和 quota 层通过抽象接口提供 Postgres fallback，保障 Redis 短暂不可达时系统可降级运行
-- AI providers: Python 侧用 litellm 或各家官方 SDK 做 provider 抽象 `(planned)`；Next.js 侧若需实时流式回答，用 Vercel AI SDK `(planned)`
+- AI providers（已定方向）：Python 侧统一 provider 抽象，**embeddings 与 LLM 分别可独立切换**：
+  - **Embeddings**：`qwen/qwen3-embedding-8b`，通过 **OpenRouter**（`https://openrouter.ai/api/v1`，OpenAI 兼容，用 `openai` SDK 配 `base_url`）调用。该模型原生维度为 4096 且支持 MRL（Matryoshka），项目按官方做法**截断到前 1536 维并做 L2 归一化**，以匹配固定的 `vector(1536)` schema 与现有 HNSW cosine 索引（不改 schema）。key 走 `services/ai/.env` 的 `OPENROUTER_API_KEY`。
+  - **LLM（回答生成）**：`deepseek-chat`，通过 **DeepSeek**（`https://api.deepseek.com`，OpenAI 兼容）调用；key 为 `DEEPSEEK_API_KEY`。
+  - **离线/无 key 兜底**：提供确定性 `FakeEmbeddings` / `FakeLLM`（见 MVP 计划 §3.3），保证 ingestion / 检索 / 评估在无网络时可端到端测试。
+  - Next.js 侧若需实时流式回答，用 Vercel AI SDK `(planned)`
 - Observability: 自建 trace 表 `(planned)`，Langfuse 等工具后续按需引入
 - Config: 每个服务各自持有 `.env`，`POSTGRES_*` 为单一真相、`DATABASE_URL` 由其派生（可用显式 `DATABASE_URL` 覆盖，便于生产托管库）
 

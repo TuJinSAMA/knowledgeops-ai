@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { account, session, user, verification } from "@/db/schema";
 import { env } from "@/env";
 import { getRedis } from "./redis";
+import { createWorkspaceForUser } from "./workspace";
 
 // ---------------------------------------------------------------------------
 // Redis-backed secondaryStorage for better-auth session caching.
@@ -59,6 +60,36 @@ export const auth = betterAuth({
   emailAndPassword: {
     enabled: true,
   },
+  // On first registration, provision a default workspace and make the user its
+  // OWNER. ensureWorkspaceForUser (called on login) covers any user that
+  // predates this hook or whose provisioning failed transiently.
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (createdUser) => {
+          try {
+            await createWorkspaceForUser(
+              createdUser.id,
+              defaultWorkspaceName(createdUser.name, createdUser.email),
+            );
+          } catch (error) {
+            // Don't block sign-up if provisioning fails; the login-time
+            // ensureWorkspaceForUser fallback will retry.
+            console.error("[auth] default workspace provisioning failed:", error);
+          }
+        },
+      },
+    },
+  },
 });
+
+function defaultWorkspaceName(name?: string | null, email?: string | null): string {
+  const trimmed = name?.trim();
+  if (trimmed) {
+    return `${trimmed}'s Workspace`;
+  }
+  const local = email?.split("@")[0]?.trim();
+  return local ? `${local}'s Workspace` : "My Workspace";
+}
 
 export type Session = typeof auth.$Infer.Session;

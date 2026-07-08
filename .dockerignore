@@ -1,0 +1,29 @@
+# Build context for the web image is the repo root. Keep it lean and never
+# ship local secrets or build artifacts into the image.
+**/node_modules
+**/.next
+**/.turbo
+**/dist
+**/build
+**/coverage
+
+# Python (the AI service has its own image/context; not needed for web)
+services/ai/.venv
+**/__pycache__
+**/*.py[cod]
+**/.ruff_cache
+**/.pytest_cache
+
+# Local data and secrets
+data/
+**/.env
+**/.env.local
+**/.env.*.local
+!**/.env.example
+
+# VCS / OS / editor
+.git
+.gitignore
+**/.DS_Store
+.idea
+.vscode
