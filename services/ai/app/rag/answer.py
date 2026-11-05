@@ -37,15 +37,55 @@ REFUSAL_MESSAGE = (
     "rephrase your question."
 )
 
+REFUSAL_MESSAGE_ZH = (
+    "当前知识库中没有足够的信息来准确回答该问题，因此我不会猜测。"
+    "请补充相关文档或换一种方式提问。"
+)
+
 _SYSTEM_PROMPT = (
-    "You are an enterprise knowledge assistant. Answer the user's question "
-    "using ONLY the numbered sources provided in the context. Cite every claim "
-    "with its source number in square brackets, e.g. [1] or [2]. If the sources "
-    "do not contain the answer, say you don't have enough information instead of "
-    "guessing. Do not invent sources or facts."
+    "You are an enterprise knowledge assistant. Always answer in the same "
+    "language as the user's question. Answer using ONLY the numbered sources "
+    "provided in the context, and cite every supported claim with its source "
+    "number in square brackets, e.g. [1] or [2]. If the provided sources do "
+    "not contain the information needed to answer the question, begin your "
+    "response with the exact token [REFUSED], briefly state in the user's "
+    "language that the knowledge base does not contain enough information, "
+    "and do NOT cite any source numbers. Never invent facts or sources."
 )
 
 _CITATION_PATTERN = re.compile(r"\[(\d+)\]")
+_CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
+_REFUSAL_PREFIX_PATTERN = re.compile(r"^\s*\[REFUSED\]\s*:?\s*", re.IGNORECASE)
+_REFUSAL_FALLBACK_PHRASES: tuple[str, ...] = (
+    "i don't have enough information",
+    "i do not have enough information",
+    "not contain enough information",
+    "没有足够的信息",
+    "资料不足",
+    "未提及",
+    "无法从现有资料",
+)
+
+
+def get_refusal_message(query: str) -> str:
+    """Return a refusal message matching the language of ``query``."""
+    if query and _CJK_PATTERN.search(query):
+        return REFUSAL_MESSAGE_ZH
+    return REFUSAL_MESSAGE
+
+
+def detect_and_clean_refusal(text: str) -> tuple[str, bool]:
+    """Detect whether LLM output is a refusal and strip the sentinel/citations."""
+    if not text:
+        return "", False
+    has_prefix = bool(_REFUSAL_PREFIX_PATTERN.match(text))
+    cleaned = _REFUSAL_PREFIX_PATTERN.sub("", text, count=1) if has_prefix else text
+    lower = cleaned.lower()
+    has_fallback = any(phrase in lower for phrase in _REFUSAL_FALLBACK_PHRASES)
+    is_refused = has_prefix or has_fallback
+    if is_refused:
+        cleaned = re.sub(r"\s*\[\d+\]", "", cleaned).strip()
+    return cleaned, is_refused
 
 
 @dataclass(frozen=True)
@@ -173,8 +213,9 @@ def generate_answer(
     )
 
     if plan.refused:
+        refusal_msg = get_refusal_message(query)
         return AnswerResult(
-            answer=REFUSAL_MESSAGE,
+            answer=refusal_msg,
             citations=[],
             usage=None,
             refused=True,
@@ -189,12 +230,13 @@ def generate_answer(
     result = provider.complete(plan.messages)
     generate_latency_ms = (time.perf_counter() - started) * 1000
 
-    citations = parse_citations(result.text, plan.retrieved)
+    cleaned_answer, is_refused = detect_and_clean_refusal(result.text)
+    citations = [] if is_refused else parse_citations(cleaned_answer, plan.retrieved)
     return AnswerResult(
-        answer=result.text,
+        answer=cleaned_answer,
         citations=citations,
         usage=result.usage,
-        refused=False,
+        refused=is_refused,
         model=result.model,
         retrieved=plan.retrieved,
         final_context=plan.final_context,
@@ -232,9 +274,10 @@ def stream_answer_events(
     )
 
     if plan.refused:
-        yield ("token", {"text": REFUSAL_MESSAGE})
+        refusal_msg = get_refusal_message(query)
+        yield ("token", {"text": refusal_msg})
         result = AnswerResult(
-            answer=REFUSAL_MESSAGE,
+            answer=refusal_msg,
             citations=[],
             usage=None,
             refused=True,
@@ -248,19 +291,37 @@ def stream_answer_events(
 
     provider = provider or get_llm_provider(settings)
     started = time.perf_counter()
-    parts: list[str] = []
+    raw_parts: list[str] = []
+    prefix_buf = ""
+    prefix_decided = False
+
     for delta in provider.stream(plan.messages):
-        parts.append(delta)
-        yield ("token", {"text": delta})
+        raw_parts.append(delta)
+        if not prefix_decided:
+            prefix_buf += delta
+            if len(prefix_buf) >= 12 or "\n" in prefix_buf:
+                prefix_decided = True
+                stripped = _REFUSAL_PREFIX_PATTERN.sub("", prefix_buf, count=1)
+                if stripped:
+                    yield ("token", {"text": stripped})
+        else:
+            yield ("token", {"text": delta})
+
+    if not prefix_decided and prefix_buf:
+        stripped = _REFUSAL_PREFIX_PATTERN.sub("", prefix_buf, count=1)
+        if stripped:
+            yield ("token", {"text": stripped})
+
     generate_latency_ms = (time.perf_counter() - started) * 1000
 
-    answer_text = "".join(parts)
-    citations = parse_citations(answer_text, plan.retrieved)
+    raw_text = "".join(raw_parts)
+    cleaned_text, is_refused = detect_and_clean_refusal(raw_text)
+    citations = [] if is_refused else parse_citations(cleaned_text, plan.retrieved)
     result = AnswerResult(
-        answer=answer_text,
+        answer=cleaned_text,
         citations=citations,
         usage=provider.last_usage,
-        refused=False,
+        refused=is_refused,
         model=provider.model,
         retrieved=plan.retrieved,
         final_context=plan.final_context,
