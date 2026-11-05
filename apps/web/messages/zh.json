@@ -26,6 +26,8 @@
   "navigation": {
     "currentWorkspace": "当前工作区",
     "newWorkspace": "+ 新建工作区…",
+    "chat": "询问助手",
+    "knowledgeBases": "知识库",
     "traces": "追踪",
     "feedback": "反馈",
     "evaluations": "评估",

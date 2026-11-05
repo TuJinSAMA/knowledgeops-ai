@@ -26,6 +26,8 @@
   "navigation": {
     "currentWorkspace": "Current workspace",
     "newWorkspace": "+ New workspace…",
+    "chat": "Chat",
+    "knowledgeBases": "Knowledge bases",
     "traces": "Traces",
     "feedback": "Feedback",
     "evaluations": "Evaluations",

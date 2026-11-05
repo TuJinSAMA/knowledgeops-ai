@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/db", () => ({ db: {} }));
 vi.mock("@/env", () => ({ env: { maxUploadBytes: 0, fileStorageDir: "./data/uploads" } }));
 
-import { ingestUploadedFile, resolveMimeType, UploadError } from "@/lib/document-upload";
+import { ingestUploadedFile, resolveMimeType } from "@/lib/document-upload";
 
 describe("resolveMimeType", () => {
   it("accepts whitelisted declared types", () => {

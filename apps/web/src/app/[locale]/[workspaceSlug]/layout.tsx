@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 
 import { SignOutButton } from "@/components/auth/SignOutButton";
+import { LocaleSwitcher } from "@/components/workspace/LocaleSwitcher";
 import { WorkspaceSwitcher } from "@/components/workspace/WorkspaceSwitcher";
 import { hasMinRole } from "@/lib/authz";
 import { requireUser } from "@/lib/session";
@@ -42,6 +43,18 @@ export default async function WorkspaceLayout({
             {current.role}
           </span>
           <Link
+            href={`/${current.slug}/chat`}
+            className="text-sm text-neutral-600 underline-offset-4 hover:underline dark:text-neutral-400"
+          >
+            {t("chat")}
+          </Link>
+          <Link
+            href={`/${current.slug}/knowledge-bases`}
+            className="text-sm text-neutral-600 underline-offset-4 hover:underline dark:text-neutral-400"
+          >
+            {t("knowledgeBases")}
+          </Link>
+          <Link
             href={`/${current.slug}/traces`}
             className="text-sm text-neutral-600 underline-offset-4 hover:underline dark:text-neutral-400"
           >
@@ -79,6 +92,7 @@ export default async function WorkspaceLayout({
           >
             {t("settings")}
           </Link>
+          <LocaleSwitcher />
           <SignOutButton />
         </div>
       </header>

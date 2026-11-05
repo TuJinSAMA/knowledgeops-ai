@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { estimateCost } from "./pricing";
+import { estimateCost, formatUsdCost } from "./pricing";
+
+describe("formatUsdCost", () => {
+  it("formats zero and standard amounts with 2 decimals, and sub-cent amounts with up to 4 decimals", () => {
+    expect(formatUsdCost(0, "en")).toBe("$0.00");
+    expect(formatUsdCost(1.25, "en")).toBe("$1.25");
+    expect(formatUsdCost(0.003594, "en")).toBe("$0.0036");
+  });
+});
 
 describe("estimateCost", () => {
   it("computes deepseek-chat cost from prompt + completion tokens", () => {

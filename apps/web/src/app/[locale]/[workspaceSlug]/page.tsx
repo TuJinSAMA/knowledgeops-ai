@@ -8,6 +8,7 @@ import {
   type DashboardMetrics,
   getDashboardMetrics,
 } from "@/lib/dashboard";
+import { formatUsdCost } from "@/lib/pricing";
 import { getQuotaStatus } from "@/lib/quota";
 import { requireUser } from "@/lib/session";
 import { getUserWorkspaceBySlug } from "@/lib/workspace";
@@ -77,7 +78,7 @@ export default async function WorkspaceDashboardPage({
   const t = await getTranslations({ locale, namespace: "dashboard" });
   const evaluationT = await getTranslations({ locale, namespace: "evaluations" });
   const formatNumber = new Intl.NumberFormat(locale).format;
-  const formatCost = new Intl.NumberFormat(locale, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format;
+  const formatCost = (amount: number) => formatUsdCost(amount, locale);
   const formatDate = new Intl.DateTimeFormat(locale, {
     dateStyle: "medium",
     timeStyle: "short",
@@ -230,7 +231,6 @@ export default async function WorkspaceDashboardPage({
           >
             {t("openAudit")}
           </Link>
-          .
         </p>
       )}
     </main>

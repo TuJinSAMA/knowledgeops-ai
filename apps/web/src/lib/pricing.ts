@@ -63,3 +63,19 @@ export function estimateCost(
   }
   return cost;
 }
+
+/**
+ * Format a USD cost figure for dashboard / usage summaries. Uses 2 fraction
+ * digits for zero or standard amounts (>= $0.01) and up to 4 fraction digits
+ * for non-zero sub-cent amounts so low-cost LLM usage (e.g. $0.0036) is not
+ * rounded down to $0.00.
+ */
+export function formatUsdCost(amount: number, locale: string): string {
+  const isSubCent = amount !== 0 && Math.abs(amount) < 0.01;
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: isSubCent ? 4 : 2,
+  }).format(amount);
+}

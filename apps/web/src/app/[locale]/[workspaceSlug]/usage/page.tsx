@@ -3,6 +3,7 @@ import { getTranslations } from "next-intl/server";
 
 import { QuotaMeter } from "@/components/dashboard/QuotaMeter";
 import { getTraceStats } from "@/lib/dashboard";
+import { formatUsdCost } from "@/lib/pricing";
 import { getQuotaStatus } from "@/lib/quota";
 import { requireUser } from "@/lib/session";
 import { getUserWorkspaceBySlug } from "@/lib/workspace";
@@ -15,7 +16,7 @@ export default async function UsagePage({
   const { locale, workspaceSlug } = await params;
   const t = await getTranslations({ locale, namespace: "usage" });
   const formatCount = new Intl.NumberFormat(locale).format;
-  const formatCost = new Intl.NumberFormat(locale, { style: "currency", currency: "USD", maximumFractionDigits: 2 }).format;
+  const formatCost = (amount: number) => formatUsdCost(amount, locale);
   const user = await requireUser(`/${workspaceSlug}/usage`);
   const workspace = await getUserWorkspaceBySlug(user.id, workspaceSlug);
   if (!workspace) {
