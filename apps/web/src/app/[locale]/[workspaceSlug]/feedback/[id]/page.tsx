@@ -80,7 +80,7 @@ export default async function FeedbackDetailPage({
       <section className="mt-6">
         <h2 className="text-sm font-medium text-neutral-500">{t("question")}</h2>
         <p className="mt-2 whitespace-pre-wrap rounded-lg border border-neutral-200 p-4 text-sm dark:border-neutral-800">
-          {feedback.conversationTitle || t("untitled")}
+          {feedback.question || feedback.conversationTitle || t("untitled")}
         </p>
       </section>
 

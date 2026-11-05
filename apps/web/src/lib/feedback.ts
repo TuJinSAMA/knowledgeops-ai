@@ -159,6 +159,7 @@ export type FeedbackListItem = {
   comment: string | null;
   knowledgeBaseId: string;
   knowledgeBaseName: string;
+  question: string | null;
   conversationTitle: string | null;
   traceId: string | null;
   createdAt: Date;
@@ -193,6 +194,7 @@ export async function listFeedback(
       comment: answerFeedback.comment,
       knowledgeBaseId: conversations.knowledgeBaseId,
       knowledgeBaseName: knowledgeBases.name,
+      question: sql<string | null>`coalesce(${ragTraces.query}, ${conversations.title})`,
       conversationTitle: conversations.title,
       traceId: answerFeedback.traceId,
       createdAt: answerFeedback.createdAt,
@@ -204,6 +206,7 @@ export async function listFeedback(
       knowledgeBases,
       eq(conversations.knowledgeBaseId, knowledgeBases.id),
     )
+    .leftJoin(ragTraces, eq(answerFeedback.traceId, ragTraces.id))
     .where(and(...conditions))
     .orderBy(desc(answerFeedback.createdAt))
     .limit(limit);
@@ -221,6 +224,7 @@ export type FeedbackDetail = {
   answer: string;
   knowledgeBaseId: string;
   knowledgeBaseName: string;
+  question: string | null;
   conversationTitle: string | null;
   createdAt: Date;
   updatedAt: Date;
@@ -247,6 +251,7 @@ export async function getFeedback(
       answer: messages.content,
       knowledgeBaseId: conversations.knowledgeBaseId,
       knowledgeBaseName: knowledgeBases.name,
+      question: sql<string | null>`coalesce(${ragTraces.query}, ${conversations.title})`,
       conversationTitle: conversations.title,
       createdAt: answerFeedback.createdAt,
       updatedAt: answerFeedback.updatedAt,
@@ -258,6 +263,7 @@ export async function getFeedback(
       knowledgeBases,
       eq(conversations.knowledgeBaseId, knowledgeBases.id),
     )
+    .leftJoin(ragTraces, eq(answerFeedback.traceId, ragTraces.id))
     .where(
       and(
         eq(answerFeedback.id, feedbackId),

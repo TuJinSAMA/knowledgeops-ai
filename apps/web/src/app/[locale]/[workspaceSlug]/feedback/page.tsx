@@ -166,7 +166,7 @@ export default async function FeedbackPage({
                       href={`/${workspaceSlug}/feedback/${f.id}`}
                       className="font-medium underline-offset-4 hover:underline"
                     >
-                      {f.conversationTitle?.slice(0, 60) || t("untitled")}
+                      {f.question?.slice(0, 60) || f.conversationTitle?.slice(0, 60) || t("untitled")}
                     </Link>
                   </td>
                   <td className="px-4 py-3 text-neutral-500">
