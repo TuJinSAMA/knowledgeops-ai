@@ -60,8 +60,18 @@ describe("getQuotaStatus", () => {
   it("treats a missing counter as zero usage", async () => {
     getImpl = async () => null;
     const status = await getQuotaStatus("ws-1");
-    // getUsage returns null for a missing counter, surfaced as a null window.
-    expect(status.daily).toBeNull();
+    expect(status.daily).toEqual({
+      period: "daily",
+      used: 0,
+      limit: 1000,
+      remaining: 1000,
+    });
+    expect(status.monthly).toEqual({
+      period: "monthly",
+      used: 0,
+      limit: 5000,
+      remaining: 5000,
+    });
   });
 });
 
@@ -69,6 +79,11 @@ describe("getUsage", () => {
   it("parses the stored counter", async () => {
     getImpl = async () => "4242";
     await expect(getUsage("ws-1", "daily")).resolves.toBe(4242);
+  });
+
+  it("returns zero when the counter key is missing", async () => {
+    getImpl = async () => null;
+    await expect(getUsage("ws-1", "daily")).resolves.toBe(0);
   });
 });
 

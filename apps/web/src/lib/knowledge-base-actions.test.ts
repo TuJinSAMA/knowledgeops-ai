@@ -115,7 +115,7 @@ describe("createKnowledgeBaseAction", () => {
       formDataOf({ name: "Docs" }),
     );
 
-    expect(result.error).toMatch(/ADMIN/);
+    expect(result.errorCode).toBe("AUTHORIZATION_FAILED");
     expect(createKnowledgeBaseMock).not.toHaveBeenCalled();
   });
 
@@ -130,13 +130,13 @@ describe("createKnowledgeBaseAction", () => {
       formDataOf({ name: "Docs" }),
     );
 
-    expect(result.error).toBe("Not a member of this workspace");
+    expect(result.errorCode).toBe("AUTHORIZATION_FAILED");
     expect(createKnowledgeBaseMock).not.toHaveBeenCalled();
   });
 
   it("validates the name before touching the guard", async () => {
     const result = await createKnowledgeBaseAction(SLUG, {}, formDataOf({ name: "  " }));
-    expect(result.error).toMatch(/required/i);
+    expect(result.errorCode).toBe("KNOWLEDGE_BASE_NAME_REQUIRED");
     expect(requireWorkspaceMemberBySlugMock).not.toHaveBeenCalled();
   });
 });
@@ -166,7 +166,7 @@ describe("deleteKnowledgeBaseAction", () => {
 
     const result = await deleteKnowledgeBaseAction(SLUG, KB_ID, {}, new FormData());
 
-    expect(result.error).toMatch(/ADMIN/);
+    expect(result.errorCode).toBe("AUTHORIZATION_FAILED");
     expect(deleteKnowledgeBaseMock).not.toHaveBeenCalled();
   });
 
@@ -180,7 +180,7 @@ describe("deleteKnowledgeBaseAction", () => {
 
     const result = await deleteKnowledgeBaseAction(SLUG, KB_ID, {}, new FormData());
 
-    expect(result.error).toBe("Knowledge base not found");
+    expect(result.errorCode).toBe("KNOWLEDGE_BASE_NOT_FOUND");
     expect(redirectMock).not.toHaveBeenCalled();
   });
 });

@@ -8,10 +8,16 @@ still run offline.
 
 from __future__ import annotations
 
+import os
 import uuid
 
 import pytest
 from sqlalchemy import text
+
+# Force deterministic offline fake providers during tests even when a developer's
+# local services/ai/.env configures real providers (e.g. for manual QA).
+os.environ["AI_PROVIDER"] = "fake"
+os.environ["LLM_PROVIDER"] = "fake"
 
 
 def _database_available() -> bool:

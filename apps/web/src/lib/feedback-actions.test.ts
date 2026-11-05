@@ -146,7 +146,7 @@ describe("submitFeedbackAction", () => {
       rating: "HELPFUL",
     });
 
-    expect(result.error).toBe("Not a member of this workspace");
+    expect(result.errorCode).toBe("AUTHORIZATION_FAILED");
     expect(upsertFeedbackMock).not.toHaveBeenCalled();
   });
 
@@ -160,7 +160,7 @@ describe("submitFeedbackAction", () => {
       rating: "HELPFUL",
     });
 
-    expect(result.error).toBe("Answer not found");
+    expect(result.errorCode).toBe("FEEDBACK_ANSWER_NOT_FOUND");
     expect(upsertFeedbackMock).not.toHaveBeenCalled();
   });
 
@@ -171,7 +171,7 @@ describe("submitFeedbackAction", () => {
       rating: "MAYBE" as never,
     });
 
-    expect(result.error).toBe("Invalid rating");
+    expect(result.errorCode).toBe("FEEDBACK_RATING_INVALID");
     expect(requireWorkspaceMemberBySlugMock).not.toHaveBeenCalled();
   });
 });
@@ -215,7 +215,7 @@ describe("updateFeedbackReviewAction", () => {
       reviewFormData({ reviewStatus: "RESOLVED" }),
     );
 
-    expect(result.error).toMatch(/ADMIN/);
+    expect(result.errorCode).toBe("AUTHORIZATION_FAILED");
     expect(updateFeedbackReviewMock).not.toHaveBeenCalled();
   });
 
@@ -227,7 +227,7 @@ describe("updateFeedbackReviewAction", () => {
       reviewFormData({ reviewStatus: "DONE" }),
     );
 
-    expect(result.error).toBe("Invalid review status");
+    expect(result.errorCode).toBe("FEEDBACK_REVIEW_STATUS_INVALID");
     expect(requireWorkspaceMemberBySlugMock).not.toHaveBeenCalled();
   });
 
@@ -246,6 +246,6 @@ describe("updateFeedbackReviewAction", () => {
       reviewFormData({ reviewStatus: "RESOLVED" }),
     );
 
-    expect(result.error).toBe("Feedback not found");
+    expect(result.errorCode).toBe("FEEDBACK_NOT_FOUND");
   });
 });

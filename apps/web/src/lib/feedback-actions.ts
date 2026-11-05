@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import type { ActionErrorCode, ActionState } from "./action-errors";
 import { AuthzError, requireWorkspaceMemberBySlug } from "./authz";
 import {
   COMMENT_MAX,
@@ -26,7 +27,8 @@ export type SubmitFeedbackInput = {
 };
 
 export type SubmitFeedbackResult = {
-  error?: string;
+  errorCode?: ActionErrorCode;
+  errorParams?: Record<string, string | number>;
   feedback?: FeedbackRecord;
 };
 
@@ -41,20 +43,23 @@ export async function submitFeedbackAction(
   input: SubmitFeedbackInput,
 ): Promise<SubmitFeedbackResult> {
   if (!input.messageId) {
-    return { error: "Missing message" };
+    return { errorCode: "FEEDBACK_MESSAGE_REQUIRED" };
   }
   if (!FEEDBACK_RATINGS.includes(input.rating)) {
-    return { error: "Invalid rating" };
+    return { errorCode: "FEEDBACK_RATING_INVALID" };
   }
   if (
     input.reportType != null &&
     !FEEDBACK_REPORT_TYPES.includes(input.reportType)
   ) {
-    return { error: "Invalid report type" };
+    return { errorCode: "FEEDBACK_REPORT_TYPE_INVALID" };
   }
   const comment = input.comment?.trim() ? input.comment.trim() : null;
   if (comment && comment.length > COMMENT_MAX) {
-    return { error: `Comment must be ${COMMENT_MAX} characters or fewer` };
+    return {
+      errorCode: "FEEDBACK_COMMENT_TOO_LONG",
+      errorParams: { max: COMMENT_MAX },
+    };
   }
 
   let workspaceId: string;
@@ -65,7 +70,7 @@ export async function submitFeedbackAction(
     userId = ctx.user.id;
   } catch (error) {
     if (error instanceof AuthzError) {
-      return { error: error.message };
+      return { errorCode: "AUTHORIZATION_FAILED" };
     }
     throw error;
   }
@@ -73,7 +78,7 @@ export async function submitFeedbackAction(
   // Tenant isolation: the message must live in this workspace.
   const messageCtx = await getMessageFeedbackContext(workspaceId, input.messageId);
   if (!messageCtx) {
-    return { error: "Answer not found" };
+    return { errorCode: "FEEDBACK_ANSWER_NOT_FOUND" };
   }
 
   const feedback = await upsertFeedback({
@@ -89,7 +94,7 @@ export async function submitFeedbackAction(
   return { feedback };
 }
 
-export type ReviewActionState = { error?: string; ok?: boolean };
+export type ReviewActionState = ActionState & { ok?: boolean };
 
 /**
  * Update a feedback item's operator review fields (status + failure reason).
@@ -106,7 +111,7 @@ export async function updateFeedbackReviewAction(
     formData.get("reviewStatus") ?? "",
   ) as FeedbackReviewStatus;
   if (!FEEDBACK_REVIEW_STATUSES.includes(reviewStatus)) {
-    return { error: "Invalid review status" };
+    return { errorCode: "FEEDBACK_REVIEW_STATUS_INVALID" };
   }
   const failureReason = String(formData.get("failureReason") ?? "").trim();
 
@@ -115,7 +120,7 @@ export async function updateFeedbackReviewAction(
     ({ workspaceId } = await requireWorkspaceMemberBySlug(workspaceSlug, "ADMIN"));
   } catch (error) {
     if (error instanceof AuthzError) {
-      return { error: error.message };
+      return { errorCode: "AUTHORIZATION_FAILED" };
     }
     throw error;
   }
@@ -125,7 +130,7 @@ export async function updateFeedbackReviewAction(
     failureReason: failureReason || null,
   });
   if (!updated) {
-    return { error: "Feedback not found" };
+    return { errorCode: "FEEDBACK_NOT_FOUND" };
   }
 
   revalidatePath(`/${workspaceSlug}/feedback`);

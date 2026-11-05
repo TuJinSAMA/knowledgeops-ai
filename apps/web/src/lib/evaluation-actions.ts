@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { AUDIT_ACTIONS, recordAudit } from "./audit";
+import type { ActionErrorCode, ActionState } from "./action-errors";
 import { AuthzError, requireWorkspaceMemberBySlug } from "./authz";
 import {
   createEvaluationCase,
@@ -14,7 +15,7 @@ import {
   type EvaluationRunConfig,
 } from "./evaluation";
 
-export type ActionState = { error?: string };
+export type { ActionState } from "./action-errors";
 
 // Parse a textarea of newline/comma-separated entries into a trimmed string[]
 // (or null when empty). Used for jsonb list fields on a case.
@@ -46,13 +47,15 @@ function parsePositiveInt(
 
 async function resolveWorkspaceId(
   workspaceSlug: string,
-): Promise<{ workspaceId: string; actorId: string } | { error: string }> {
+): Promise<
+  { workspaceId: string; actorId: string } | { errorCode: ActionErrorCode }
+> {
   try {
     const ctx = await requireWorkspaceMemberBySlug(workspaceSlug, "ADMIN");
     return { workspaceId: ctx.workspaceId, actorId: ctx.user.id };
   } catch (error) {
     if (error instanceof AuthzError) {
-      return { error: error.message };
+      return { errorCode: "AUTHORIZATION_FAILED" };
     }
     throw error;
   }
@@ -70,13 +73,13 @@ export async function createEvaluationDatasetAction(
 ): Promise<ActionState> {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) {
-    return { error: "Dataset name is required" };
+    return { errorCode: "DATASET_NAME_REQUIRED" };
   }
   const description = String(formData.get("description") ?? "").trim();
   const knowledgeBaseId = String(formData.get("knowledgeBaseId") ?? "").trim();
 
   const resolved = await resolveWorkspaceId(workspaceSlug);
-  if ("error" in resolved) {
+  if ("errorCode" in resolved) {
     return resolved;
   }
 
@@ -87,8 +90,8 @@ export async function createEvaluationDatasetAction(
       description: description || null,
       knowledgeBaseId: knowledgeBaseId || null,
     });
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to create" };
+  } catch {
+    return { errorCode: "EVALUATION_CREATE_FAILED" };
   }
 
   revalidatePath(`/${workspaceSlug}/evaluations`);
@@ -107,13 +110,13 @@ export async function deleteEvaluationDatasetAction(
 ): Promise<ActionState> {
   void formData;
   const resolved = await resolveWorkspaceId(workspaceSlug);
-  if ("error" in resolved) {
+  if ("errorCode" in resolved) {
     return resolved;
   }
 
   const deleted = await deleteEvaluationDataset(resolved.workspaceId, datasetId);
   if (!deleted) {
-    return { error: "Dataset not found" };
+    return { errorCode: "DATASET_NOT_FOUND" };
   }
 
   revalidatePath(`/${workspaceSlug}/evaluations`);
@@ -133,11 +136,11 @@ export async function createEvaluationCaseAction(
 ): Promise<ActionState> {
   const question = String(formData.get("question") ?? "").trim();
   if (!question) {
-    return { error: "Question is required" };
+    return { errorCode: "EVALUATION_CASE_QUESTION_REQUIRED" };
   }
 
   const resolved = await resolveWorkspaceId(workspaceSlug);
-  if ("error" in resolved) {
+  if ("errorCode" in resolved) {
     return resolved;
   }
 
@@ -151,11 +154,11 @@ export async function createEvaluationCaseAction(
       requiredFacts: parseList(formData.get("requiredFacts")),
       tags: parseList(formData.get("tags")),
     });
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : "Failed to add case" };
+  } catch {
+    return { errorCode: "EVALUATION_CASE_CREATE_FAILED" };
   }
   if (!created) {
-    return { error: "Dataset not found" };
+    return { errorCode: "DATASET_NOT_FOUND" };
   }
 
   revalidatePath(`/${workspaceSlug}/evaluations/${datasetId}`);
@@ -175,7 +178,7 @@ export async function deleteEvaluationCaseAction(
 ): Promise<ActionState> {
   void formData;
   const resolved = await resolveWorkspaceId(workspaceSlug);
-  if ("error" in resolved) {
+  if ("errorCode" in resolved) {
     return resolved;
   }
 
@@ -185,7 +188,7 @@ export async function deleteEvaluationCaseAction(
     caseId,
   );
   if (!deleted) {
-    return { error: "Case not found" };
+    return { errorCode: "EVALUATION_CASE_NOT_FOUND" };
   }
 
   revalidatePath(`/${workspaceSlug}/evaluations/${datasetId}`);
@@ -205,7 +208,7 @@ export async function triggerEvaluationRunAction(
   formData: FormData,
 ): Promise<ActionState> {
   const resolved = await resolveWorkspaceId(workspaceSlug);
-  if ("error" in resolved) {
+  if ("errorCode" in resolved) {
     return resolved;
   }
 
@@ -233,7 +236,7 @@ export async function triggerEvaluationRunAction(
 
   const run = await createEvaluationRun(resolved.workspaceId, datasetId, config);
   if (!run) {
-    return { error: "Dataset not found" };
+    return { errorCode: "DATASET_NOT_FOUND" };
   }
 
   await recordAudit({

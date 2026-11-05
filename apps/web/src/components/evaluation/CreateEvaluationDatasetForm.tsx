@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useTranslations } from "next-intl";
 
 import {
   type ActionState,
@@ -16,6 +17,8 @@ export function CreateEvaluationDatasetForm({
   workspaceSlug: string;
   knowledgeBases: KnowledgeBaseOption[];
 }) {
+  const t = useTranslations("evaluations");
+  const errorT = useTranslations("errors");
   const boundAction = createEvaluationDatasetAction.bind(null, workspaceSlug);
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     boundAction,
@@ -26,13 +29,13 @@ export function CreateEvaluationDatasetForm({
     <form action={formAction} className="space-y-3">
       <div className="space-y-1.5">
         <label htmlFor="ds-name" className="block text-sm font-medium">
-          Name
+          {t("name")}
         </label>
         <input
           id="ds-name"
           name="name"
           type="text"
-          placeholder="Support FAQ regression set"
+          placeholder={t("datasetNamePlaceholder")}
           required
           className="w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-neutral-900 dark:border-neutral-700 dark:focus:border-neutral-200"
         />
@@ -40,20 +43,20 @@ export function CreateEvaluationDatasetForm({
 
       <div className="space-y-1.5">
         <label htmlFor="ds-description" className="block text-sm font-medium">
-          Description <span className="text-neutral-400">(optional)</span>
+          {t("descriptionLabel")} <span className="text-neutral-400">{t("optional")}</span>
         </label>
         <textarea
           id="ds-description"
           name="description"
           rows={2}
-          placeholder="What does this dataset evaluate?"
+          placeholder={t("datasetDescriptionPlaceholder")}
           className="w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-neutral-900 dark:border-neutral-700 dark:focus:border-neutral-200"
         />
       </div>
 
       <div className="space-y-1.5">
         <label htmlFor="ds-kb" className="block text-sm font-medium">
-          Knowledge base <span className="text-neutral-400">(optional)</span>
+          {t("knowledgeBase")} <span className="text-neutral-400">{t("optional")}</span>
         </label>
         <select
           id="ds-kb"
@@ -61,7 +64,7 @@ export function CreateEvaluationDatasetForm({
           defaultValue=""
           className="w-full rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-neutral-900 dark:border-neutral-700 dark:focus:border-neutral-200"
         >
-          <option value="">None</option>
+          <option value="">{t("noneOption")}</option>
           {knowledgeBases.map((kb) => (
             <option key={kb.id} value={kb.id}>
               {kb.name}
@@ -70,8 +73,10 @@ export function CreateEvaluationDatasetForm({
         </select>
       </div>
 
-      {state.error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{state.error}</p>
+      {state.errorCode && (
+        <p className="text-sm text-red-600 dark:text-red-400">
+          {errorT(state.errorCode, state.errorParams)}
+        </p>
       )}
 
       <button
@@ -79,7 +84,7 @@ export function CreateEvaluationDatasetForm({
         disabled={pending}
         className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
       >
-        {pending ? "Creating…" : "Create dataset"}
+        {pending ? t("creating") : t("createDataset")}
       </button>
     </form>
   );

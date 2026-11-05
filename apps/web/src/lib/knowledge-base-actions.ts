@@ -4,13 +4,14 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { AUDIT_ACTIONS, recordAudit } from "./audit";
+import type { ActionState } from "./action-errors";
 import { AuthzError, requireWorkspaceMemberBySlug } from "./authz";
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
 } from "./knowledge-base";
 
-export type ActionState = { error?: string };
+export type { ActionState } from "./action-errors";
 
 /**
  * Create a knowledge base in a workspace and navigate into it. Requires ADMIN
@@ -25,7 +26,7 @@ export async function createKnowledgeBaseAction(
   const name = String(formData.get("name") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   if (!name) {
-    return { error: "Knowledge base name is required" };
+    return { errorCode: "KNOWLEDGE_BASE_NAME_REQUIRED" };
   }
 
   let workspaceId: string;
@@ -36,7 +37,7 @@ export async function createKnowledgeBaseAction(
     actorId = ctx.user.id;
   } catch (error) {
     if (error instanceof AuthzError) {
-      return { error: error.message };
+      return { errorCode: "AUTHORIZATION_FAILED" };
     }
     throw error;
   }
@@ -72,14 +73,14 @@ export async function deleteKnowledgeBaseAction(
     actorId = ctx.user.id;
   } catch (error) {
     if (error instanceof AuthzError) {
-      return { error: error.message };
+      return { errorCode: "AUTHORIZATION_FAILED" };
     }
     throw error;
   }
 
   const deleted = await deleteKnowledgeBase(workspaceId, knowledgeBaseId);
   if (!deleted) {
-    return { error: "Knowledge base not found" };
+    return { errorCode: "KNOWLEDGE_BASE_NOT_FOUND" };
   }
 
   await recordAudit({

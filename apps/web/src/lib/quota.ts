@@ -52,7 +52,7 @@ export async function incrementUsage(
 
 /**
  * Return the current usage counter for a workspace in the active period window.
- * Returns null when Redis is unavailable or the counter has not been set yet.
+ * Missing keys mean zero usage. Returns null only when Redis is unavailable.
  */
 export async function getUsage(
   workspaceId: string,
@@ -62,7 +62,7 @@ export async function getUsage(
     const redis = getRedis();
     const key = quotaKey(workspaceId, period);
     const value = await redis.get(key);
-    return value !== null ? parseInt(value, 10) : null;
+    return value !== null ? parseInt(value, 10) : 0;
   } catch (err) {
     console.warn("[quota] Redis unavailable, cannot read usage counter:", err);
     return null;

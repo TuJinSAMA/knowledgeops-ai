@@ -1,38 +1,20 @@
 "use client";
 
-import Link from "next/link";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useTranslations } from "next-intl";
 import { useState } from "react";
 
+import { Link, useRouter } from "@/i18n/navigation";
 import { signIn, signUp } from "@/lib/auth-client";
 
 type AuthMode = "sign-in" | "sign-up";
 
-const COPY: Record<
-  AuthMode,
-  { title: string; submit: string; altPrompt: string; altHref: string; altLabel: string }
-> = {
-  "sign-in": {
-    title: "Sign in",
-    submit: "Sign in",
-    altPrompt: "Don't have an account?",
-    altHref: "/sign-up",
-    altLabel: "Create one",
-  },
-  "sign-up": {
-    title: "Create your account",
-    submit: "Create account",
-    altPrompt: "Already have an account?",
-    altHref: "/sign-in",
-    altLabel: "Sign in",
-  },
-};
-
 export function AuthForm({ mode }: { mode: AuthMode }) {
   const router = useRouter();
+  const t = useTranslations("auth");
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/";
-  const copy = COPY[mode];
+  const isSignUp = mode === "sign-up";
 
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
@@ -51,7 +33,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         : await signIn.email({ email, password });
 
     if (result.error) {
-      setError(result.error.message ?? "Authentication failed. Please try again.");
+      setError(result.error.message ?? t("authenticationFailed"));
       setPending(false);
       return;
     }
@@ -66,14 +48,16 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         <p className="text-sm font-medium uppercase tracking-widest text-neutral-500">
           Hameo KnowledgeOps
         </p>
-        <h1 className="text-2xl font-semibold tracking-tight">{copy.title}</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {t(isSignUp ? "signUpTitle" : "signInTitle")}
+        </h1>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {mode === "sign-up" && (
           <Field
             id="name"
-            label="Name"
+            label={t("name")}
             type="text"
             value={name}
             onChange={setName}
@@ -83,7 +67,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         )}
         <Field
           id="email"
-          label="Email"
+          label={t("email")}
           type="email"
           value={email}
           onChange={setEmail}
@@ -92,7 +76,7 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
         />
         <Field
           id="password"
-          label="Password"
+          label={t("password")}
           type="password"
           value={password}
           onChange={setPassword}
@@ -112,17 +96,17 @@ export function AuthForm({ mode }: { mode: AuthMode }) {
           disabled={pending}
           className="w-full rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
         >
-          {pending ? "Please wait…" : copy.submit}
+          {pending ? t("wait") : t(isSignUp ? "signUp" : "signIn")}
         </button>
       </form>
 
       <p className="text-sm text-neutral-600 dark:text-neutral-400">
-        {copy.altPrompt}{" "}
+        {t(isSignUp ? "hasAccount" : "noAccount")}{" "}
         <Link
-          href={copy.altHref}
+          href={isSignUp ? "/sign-in" : "/sign-up"}
           className="font-medium text-neutral-900 underline underline-offset-4 dark:text-white"
         >
-          {copy.altLabel}
+          {t(isSignUp ? "signIn" : "createOne")}
         </Link>
       </p>
     </div>

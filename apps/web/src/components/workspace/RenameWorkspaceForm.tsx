@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useTranslations } from "next-intl";
 
 import {
   type ActionState,
@@ -16,6 +17,8 @@ export function RenameWorkspaceForm({
   slug: string;
   currentName: string;
 }) {
+  const t = useTranslations("settings");
+  const errorT = useTranslations("errors");
   const boundAction = renameWorkspaceAction.bind(null, workspaceId, slug);
   const [state, formAction, pending] = useActionState<ActionState, FormData>(
     boundAction,
@@ -26,7 +29,7 @@ export function RenameWorkspaceForm({
     <form action={formAction} className="space-y-3">
       <div className="space-y-1.5">
         <label htmlFor="name" className="block text-sm font-medium">
-          Workspace name
+          {t("workspaceName")}
         </label>
         <input
           id="name"
@@ -38,8 +41,10 @@ export function RenameWorkspaceForm({
         />
       </div>
 
-      {state.error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{state.error}</p>
+      {state.errorCode && (
+        <p className="text-sm text-red-600 dark:text-red-400">
+          {errorT(state.errorCode, state.errorParams)}
+        </p>
       )}
 
       <button
@@ -47,7 +52,7 @@ export function RenameWorkspaceForm({
         disabled={pending}
         className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
       >
-        {pending ? "Saving…" : "Save changes"}
+        {pending ? t("saving") : t("saveChanges")}
       </button>
     </form>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslations } from "next-intl";
 
 type DocumentStatus = "PENDING" | "PROCESSING" | "INGESTED" | "FAILED";
 
@@ -40,6 +41,7 @@ export function DocumentsPanel({
   initialDocuments: DocumentSummary[];
   canUpload: boolean;
 }) {
+  const t = useTranslations("knowledgeBases");
   const [documents, setDocuments] = useState<DocumentSummary[]>(initialDocuments);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +80,7 @@ export function DocumentsPanel({
         const res = await fetch(endpoint, { method: "POST", body: formData });
         if (!res.ok) {
           const data = (await res.json().catch(() => ({}))) as { error?: string };
-          setError(data.error ?? `Upload failed (${res.status})`);
+          setError(data.error ?? t("uploadFailedStatus", { status: res.status }));
           return;
         }
         if (fileInputRef.current) {
@@ -86,12 +88,12 @@ export function DocumentsPanel({
         }
         await refresh();
       } catch {
-        setError("Upload failed. Please try again.");
+        setError(t("uploadFailed"));
       } finally {
         setUploading(false);
       }
     },
-    [endpoint, refresh],
+    [endpoint, refresh, t],
   );
 
   return (
@@ -102,7 +104,7 @@ export function DocumentsPanel({
             htmlFor="document-file"
             className="block text-sm font-medium"
           >
-            Upload a document
+            {t("upload")}
           </label>
           <input
             id="document-file"
@@ -119,10 +121,10 @@ export function DocumentsPanel({
             className="block w-full text-sm text-neutral-600 file:mr-3 file:rounded-md file:border-0 file:bg-neutral-900 file:px-4 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-neutral-700 disabled:opacity-60 dark:text-neutral-400 dark:file:bg-white dark:file:text-neutral-900"
           />
           <p className="text-xs text-neutral-500">
-            Markdown, plain text, or PDF.
+            {t("acceptedFiles")}
           </p>
           {uploading && (
-            <p className="text-sm text-neutral-500">Uploading…</p>
+            <p className="text-sm text-neutral-500">{t("uploading")}</p>
           )}
           {error && (
             <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
@@ -132,19 +134,19 @@ export function DocumentsPanel({
 
       <div>
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-medium">Documents</h2>
+          <h2 className="text-lg font-medium">{t("documentsTitle")}</h2>
           <button
             type="button"
             onClick={() => void refresh()}
             className="text-xs text-neutral-500 underline-offset-4 hover:underline"
           >
-            Refresh
+            {t("refresh")}
           </button>
         </div>
 
         {documents.length === 0 ? (
           <p className="mt-3 rounded-lg border border-dashed border-neutral-300 p-6 text-sm text-neutral-500 dark:border-neutral-700">
-            No documents yet.
+            {t("noDocuments")}
           </p>
         ) : (
           <ul className="mt-3 divide-y divide-neutral-200 rounded-lg border border-neutral-200 dark:divide-neutral-800 dark:border-neutral-800">
@@ -158,8 +160,7 @@ export function DocumentsPanel({
                       {doc.status === "INGESTED" && (
                         <>
                           {" · "}
-                          {doc.chunkCount} chunk
-                          {doc.chunkCount === 1 ? "" : "s"}
+                          {t("chunks", { count: doc.chunkCount })}
                         </>
                       )}
                     </p>
@@ -167,7 +168,7 @@ export function DocumentsPanel({
                   <span
                     className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLES[doc.status]}`}
                   >
-                    {doc.status}
+                    {t(`status.${doc.status}`)}
                   </span>
                 </div>
                 {doc.status === "FAILED" && doc.lastError && (

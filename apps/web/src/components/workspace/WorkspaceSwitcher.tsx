@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
-
+import { useRouter } from "@/i18n/navigation";
+import { useTranslations } from "next-intl";
 import type { WorkspaceSummary } from "@/lib/workspace";
 
 export function WorkspaceSwitcher({
@@ -12,6 +12,7 @@ export function WorkspaceSwitcher({
   currentSlug: string;
 }) {
   const router = useRouter();
+  const t = useTranslations("navigation");
 
   function handleChange(event: React.ChangeEvent<HTMLSelectElement>) {
     const value = event.target.value;
@@ -26,7 +27,7 @@ export function WorkspaceSwitcher({
 
   return (
     <label className="flex items-center gap-2 text-sm">
-      <span className="sr-only">Current workspace</span>
+      <span className="sr-only">{t("currentWorkspace")}</span>
       <select
         value={currentSlug}
         onChange={handleChange}
@@ -37,7 +38,7 @@ export function WorkspaceSwitcher({
             {workspace.name}
           </option>
         ))}
-        <option value="__new__">+ New workspace…</option>
+        <option value="__new__">{t("newWorkspace")}</option>
       </select>
     </label>
   );

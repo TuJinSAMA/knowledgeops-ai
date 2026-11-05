@@ -4,10 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { AuthzError, requireWorkspaceMember } from "./authz";
+import type { ActionState } from "./action-errors";
 import { requireUser } from "./session";
 import { createWorkspaceForUser, renameWorkspace } from "./workspace";
 
-export type ActionState = { error?: string };
+export type { ActionState } from "./action-errors";
 
 /**
  * Create a new workspace owned by the current user, then navigate into it.
@@ -20,7 +21,7 @@ export async function createWorkspaceAction(
   const user = await requireUser();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) {
-    return { error: "Workspace name is required" };
+    return { errorCode: "WORKSPACE_NAME_REQUIRED" };
   }
 
   const workspace = await createWorkspaceForUser(user.id, name);
@@ -38,14 +39,14 @@ export async function renameWorkspaceAction(
 ): Promise<ActionState> {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) {
-    return { error: "Workspace name is required" };
+    return { errorCode: "WORKSPACE_NAME_REQUIRED" };
   }
 
   try {
     await requireWorkspaceMember(workspaceId, "ADMIN");
   } catch (error) {
     if (error instanceof AuthzError) {
-      return { error: error.message };
+      return { errorCode: "AUTHORIZATION_FAILED" };
     }
     throw error;
   }

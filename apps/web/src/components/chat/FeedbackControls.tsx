@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useTranslations } from "next-intl";
 
 import {
   submitFeedbackAction,
@@ -9,12 +10,6 @@ import {
 
 type Rating = "HELPFUL" | "NOT_HELPFUL";
 type ReportType = "WRONG_ANSWER" | "MISSING_KNOWLEDGE" | "OTHER";
-
-const REPORT_OPTIONS: { value: ReportType; label: string }[] = [
-  { value: "WRONG_ANSWER", label: "Wrong answer" },
-  { value: "MISSING_KNOWLEDGE", label: "Missing knowledge" },
-  { value: "OTHER", label: "Other" },
-];
 
 const ratingButtonClass = (active: boolean): string =>
   `rounded border px-1.5 py-0.5 text-xs transition ${
@@ -37,6 +32,8 @@ export function FeedbackControls({
   workspaceSlug: string;
   messageId: string;
 }) {
+  const t = useTranslations("chat");
+  const errorT = useTranslations("errors");
   const [rating, setRating] = useState<Rating | null>(null);
   const [reportType, setReportType] = useState<ReportType>("WRONG_ANSWER");
   const [comment, setComment] = useState("");
@@ -53,8 +50,8 @@ export function FeedbackControls({
         messageId,
         ...input,
       });
-      if (result.error) {
-        setError(result.error);
+      if (result.errorCode) {
+        setError(errorT(result.errorCode, result.errorParams));
         return;
       }
       setRating(input.rating);
@@ -87,7 +84,7 @@ export function FeedbackControls({
           onClick={() => rate("HELPFUL")}
           className={ratingButtonClass(rating === "HELPFUL")}
         >
-          Helpful
+          {t("helpful")}
         </button>
         <button
           type="button"
@@ -95,18 +92,18 @@ export function FeedbackControls({
           onClick={() => rate("NOT_HELPFUL")}
           className={ratingButtonClass(rating === "NOT_HELPFUL")}
         >
-          Not helpful
+          {t("notHelpful")}
         </button>
         <button
           type="button"
           onClick={() => setShowReport((v) => !v)}
           className="text-xs text-neutral-500 underline-offset-4 hover:underline"
         >
-          {showReport ? "Cancel report" : "Report issue"}
+          {showReport ? t("cancelReport") : t("reportIssue")}
         </button>
         {saved && !pending && (
           <span className="text-xs text-emerald-600 dark:text-emerald-400">
-            Thanks for the feedback
+            {t("thanks")}
           </span>
         )}
       </div>
@@ -118,9 +115,9 @@ export function FeedbackControls({
             onChange={(e) => setReportType(e.target.value as ReportType)}
             className="w-full rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-xs outline-none dark:border-neutral-700"
           >
-            {REPORT_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
+            {(["WRONG_ANSWER", "MISSING_KNOWLEDGE", "OTHER"] as const).map((value) => (
+              <option key={value} value={value}>
+                {t(value === "WRONG_ANSWER" ? "wrongAnswer" : value === "MISSING_KNOWLEDGE" ? "missingKnowledge" : "other")}
               </option>
             ))}
           </select>
@@ -128,7 +125,7 @@ export function FeedbackControls({
             value={comment}
             onChange={(e) => setComment(e.target.value)}
             rows={2}
-            placeholder="What went wrong? (optional)"
+            placeholder={t("reportPlaceholder")}
             className="w-full resize-none rounded-md border border-neutral-300 bg-transparent px-2 py-1 text-xs outline-none dark:border-neutral-700"
           />
           <button
@@ -137,7 +134,7 @@ export function FeedbackControls({
             onClick={submitReport}
             className="rounded bg-neutral-900 px-2 py-1 text-xs font-medium text-white disabled:opacity-60 dark:bg-white dark:text-neutral-900"
           >
-            {pending ? "Submitting…" : "Submit report"}
+            {pending ? t("submitting") : t("submitReport")}
           </button>
         </div>
       )}

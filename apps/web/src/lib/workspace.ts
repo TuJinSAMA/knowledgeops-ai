@@ -6,6 +6,8 @@ import { workspaceMembers, workspaces } from "@/db/schema";
 // Slugs that collide with top-level routes or framework paths and therefore
 // must never be assigned to a workspace.
 const RESERVED_SLUGS = new Set([
+  "en",
+  "zh",
   "api",
   "sign-in",
   "sign-up",

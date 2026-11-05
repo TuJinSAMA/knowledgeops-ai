@@ -115,7 +115,7 @@ describe("createEvaluationDatasetAction", () => {
       {},
       formDataOf({ name: "  " }),
     );
-    expect(result.error).toMatch(/required/i);
+    expect(result.errorCode).toBe("DATASET_NAME_REQUIRED");
     expect(requireWorkspaceMemberBySlugMock).not.toHaveBeenCalled();
   });
 
@@ -128,7 +128,7 @@ describe("createEvaluationDatasetAction", () => {
       {},
       formDataOf({ name: "FAQ" }),
     );
-    expect(result.error).toMatch(/ADMIN/);
+    expect(result.errorCode).toBe("AUTHORIZATION_FAILED");
     expect(createEvaluationDatasetMock).not.toHaveBeenCalled();
   });
 
@@ -141,7 +141,7 @@ describe("createEvaluationDatasetAction", () => {
       {},
       formDataOf({ name: "FAQ" }),
     );
-    expect(result.error).toBe("Not a member of this workspace");
+    expect(result.errorCode).toBe("AUTHORIZATION_FAILED");
     expect(createEvaluationDatasetMock).not.toHaveBeenCalled();
   });
 });
@@ -168,7 +168,7 @@ describe("deleteEvaluationDatasetAction", () => {
       {},
       new FormData(),
     );
-    expect(result.error).toBe("Dataset not found");
+    expect(result.errorCode).toBe("DATASET_NOT_FOUND");
     expect(redirectMock).not.toHaveBeenCalled();
   });
 });
@@ -196,7 +196,7 @@ describe("createEvaluationCaseAction", () => {
         tags: ["auth", "security"],
       }),
     );
-    expect(result.error).toBeUndefined();
+    expect(result.errorCode).toBeUndefined();
   });
 
   it("validates the question before touching the guard", async () => {
@@ -206,7 +206,7 @@ describe("createEvaluationCaseAction", () => {
       {},
       formDataOf({ question: "  " }),
     );
-    expect(result.error).toMatch(/required/i);
+    expect(result.errorCode).toBe("EVALUATION_CASE_QUESTION_REQUIRED");
     expect(requireWorkspaceMemberBySlugMock).not.toHaveBeenCalled();
   });
 
@@ -218,7 +218,7 @@ describe("createEvaluationCaseAction", () => {
       {},
       formDataOf({ question: "Q?" }),
     );
-    expect(result.error).toBe("Dataset not found");
+    expect(result.errorCode).toBe("DATASET_NOT_FOUND");
   });
 
   it("rejects a non-member without writing", async () => {
@@ -231,7 +231,7 @@ describe("createEvaluationCaseAction", () => {
       {},
       formDataOf({ question: "Q?" }),
     );
-    expect(result.error).toBe("Not a member of this workspace");
+    expect(result.errorCode).toBe("AUTHORIZATION_FAILED");
     expect(createEvaluationCaseMock).not.toHaveBeenCalled();
   });
 });
@@ -251,7 +251,7 @@ describe("deleteEvaluationCaseAction", () => {
       DATASET_ID,
       CASE_ID,
     );
-    expect(result.error).toBeUndefined();
+    expect(result.errorCode).toBeUndefined();
   });
 
   it("returns an error when the case is absent", async () => {
@@ -263,7 +263,7 @@ describe("deleteEvaluationCaseAction", () => {
       {},
       new FormData(),
     );
-    expect(result.error).toBe("Case not found");
+    expect(result.errorCode).toBe("EVALUATION_CASE_NOT_FOUND");
   });
 });
 
@@ -299,7 +299,7 @@ describe("triggerEvaluationRunAction", () => {
       {},
       new FormData(),
     );
-    expect(result.error).toMatch(/ADMIN/);
+    expect(result.errorCode).toBe("AUTHORIZATION_FAILED");
     expect(createEvaluationRunMock).not.toHaveBeenCalled();
   });
 
@@ -311,7 +311,7 @@ describe("triggerEvaluationRunAction", () => {
       {},
       new FormData(),
     );
-    expect(result.error).toBe("Dataset not found");
+    expect(result.errorCode).toBe("DATASET_NOT_FOUND");
     expect(redirectMock).not.toHaveBeenCalled();
   });
 });

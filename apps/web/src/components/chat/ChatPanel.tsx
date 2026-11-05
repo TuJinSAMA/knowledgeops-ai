@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useTranslations } from "next-intl";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { FeedbackControls } from "@/components/chat/FeedbackControls";
@@ -96,6 +97,7 @@ export function ChatPanel({
   workspaceSlug: string;
   knowledgeBases: KnowledgeBaseOption[];
 }) {
+  const t = useTranslations("chat");
   const [selectedKbId, setSelectedKbId] = useState(
     knowledgeBases[0]?.id ?? "",
   );
@@ -171,7 +173,7 @@ export function ChatPanel({
         const data = (await res.json().catch(() => ({}))) as { error?: string };
         patchMessage(assistantId, {
           streaming: false,
-          error: data.error ?? `Request failed (${res.status})`,
+          error: data.error ?? t("requestFailed", { status: res.status }),
         });
         return;
       }
@@ -209,7 +211,7 @@ export function ChatPanel({
             const msg = (data as { message?: string } | null)?.message;
             patchMessage(assistantId, {
               streaming: false,
-              error: msg ?? "Answer failed",
+              error: msg ?? t("answerFailed"),
             });
           }
         }
@@ -218,7 +220,7 @@ export function ChatPanel({
     } catch {
       patchMessage(assistantId, {
         streaming: false,
-        error: "Network error. Please try again.",
+        error: t("networkError"),
       });
     } finally {
       setSending(false);
@@ -230,13 +232,13 @@ export function ChatPanel({
     conversationId,
     chatEndpoint,
     patchMessage,
+    t,
   ]);
 
   if (knowledgeBases.length === 0) {
     return (
       <p className="rounded-lg border border-dashed border-neutral-300 p-6 text-sm text-neutral-500 dark:border-neutral-700">
-        You need a knowledge base with ingested documents before you can ask
-        the assistant anything.
+        {t("needKnowledgeBase")}
       </p>
     );
   }
@@ -245,7 +247,7 @@ export function ChatPanel({
     <div className="flex h-[70vh] flex-col rounded-lg border border-neutral-200 dark:border-neutral-800">
       <div className="flex flex-wrap items-center gap-2 border-b border-neutral-200 px-4 py-3 dark:border-neutral-800">
         <label htmlFor="kb-select" className="text-sm text-neutral-500">
-          Knowledge base
+          {t("knowledgeBase")}
         </label>
         <select
           id="kb-select"
@@ -269,7 +271,7 @@ export function ChatPanel({
             }}
             className="ml-auto text-xs text-neutral-500 underline-offset-4 hover:underline"
           >
-            New conversation
+            {t("newConversation")}
           </button>
         )}
       </div>
@@ -277,8 +279,7 @@ export function ChatPanel({
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
         {messages.length === 0 ? (
           <p className="text-sm text-neutral-500">
-            Ask a question and the assistant will answer using only your
-            knowledge base, citing its sources.
+            {t("emptyConversation")}
           </p>
         ) : (
           messages.map((m) => (
@@ -309,7 +310,7 @@ export function ChatPanel({
             }
           }}
           rows={1}
-          placeholder="Ask about your knowledge base…"
+          placeholder={t("inputPlaceholder")}
           className="min-h-[40px] flex-1 resize-none rounded-md border border-neutral-300 bg-transparent px-3 py-2 text-sm outline-none focus:border-neutral-900 dark:border-neutral-700 dark:focus:border-neutral-200"
         />
         <button
@@ -317,7 +318,7 @@ export function ChatPanel({
           disabled={sending || !input.trim()}
           className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
         >
-          {sending ? "…" : "Send"}
+          {sending ? "…" : t("send")}
         </button>
       </form>
     </div>
@@ -333,6 +334,7 @@ function MessageBubble({
   traceBasePath: string;
   workspaceSlug: string;
 }) {
+  const t = useTranslations("chat");
   const isUser = message.role === "USER";
   return (
     <div className={isUser ? "flex justify-end" : "flex justify-start"}>
@@ -346,7 +348,7 @@ function MessageBubble({
         {message.content ? (
           <p className="whitespace-pre-wrap break-words">{message.content}</p>
         ) : message.streaming ? (
-          <p className="text-neutral-400">Thinking…</p>
+          <p className="text-neutral-400">{t("thinking")}</p>
         ) : null}
 
         {message.error && (
@@ -355,15 +357,14 @@ function MessageBubble({
 
         {!isUser && message.refused && (
           <span className="mt-2 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
-            Low confidence · refused to guess
+            {t("lowConfidence")}
           </span>
         )}
 
         {!isUser && message.citations.length > 0 && (
           <details className="mt-2">
             <summary className="cursor-pointer text-xs text-neutral-500 hover:underline">
-              {message.citations.length} source
-              {message.citations.length === 1 ? "" : "s"}
+              {t("sources", { count: message.citations.length })}
             </summary>
             <ul className="mt-2 space-y-2">
               {message.citations.map((c) => (
@@ -377,7 +378,7 @@ function MessageBubble({
                     </span>
                     {typeof c.score === "number" && (
                       <span className="text-neutral-400">
-                        score {c.score.toFixed(3)}
+                        {t("score", { score: c.score.toFixed(3) })}
                       </span>
                     )}
                   </div>
@@ -406,7 +407,7 @@ function MessageBubble({
                   href={`${traceBasePath}/${message.traceId}`}
                   className="ml-auto rounded border border-neutral-200 px-1.5 py-0.5 text-xs text-neutral-500 underline-offset-4 hover:underline dark:border-neutral-800"
                 >
-                  View trace
+                  {t("viewTrace")}
                 </Link>
               )}
             </div>

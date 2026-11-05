@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useTranslations } from "next-intl";
 
 import {
   type ActionState,
@@ -16,6 +17,8 @@ export function DeleteEvaluationCaseButton({
   datasetId: string;
   caseId: string;
 }) {
+  const t = useTranslations("evaluations");
+  const errorT = useTranslations("errors");
   const boundAction = deleteEvaluationCaseAction.bind(
     null,
     workspaceSlug,
@@ -31,14 +34,14 @@ export function DeleteEvaluationCaseButton({
     <form
       action={formAction}
       onSubmit={(event) => {
-        if (!window.confirm("Delete this case? This cannot be undone.")) {
+        if (!window.confirm(t("deleteCaseConfirm"))) {
           event.preventDefault();
         }
       }}
     >
-      {state.error && (
+      {state.errorCode && (
         <span className="mr-2 text-xs text-red-600 dark:text-red-400">
-          {state.error}
+          {errorT(state.errorCode, state.errorParams)}
         </span>
       )}
       <button
@@ -46,7 +49,7 @@ export function DeleteEvaluationCaseButton({
         disabled={pending}
         className="text-xs font-medium text-red-600 underline-offset-4 hover:underline disabled:opacity-60 dark:text-red-400"
       >
-        {pending ? "Deleting…" : "Delete"}
+        {pending ? t("deleting") : t("delete")}
       </button>
     </form>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useTranslations } from "next-intl";
 
 import {
   type ActionState,
@@ -16,6 +17,8 @@ export function DeleteEvaluationDatasetButton({
   datasetId: string;
   datasetName: string;
 }) {
+  const t = useTranslations("evaluations");
+  const errorT = useTranslations("errors");
   const boundAction = deleteEvaluationDatasetAction.bind(
     null,
     workspaceSlug,
@@ -32,7 +35,7 @@ export function DeleteEvaluationDatasetButton({
       onSubmit={(event) => {
         if (
           !window.confirm(
-            `Delete "${datasetName}"? This also deletes all of its cases, runs and results and cannot be undone.`,
+            t("deleteConfirm", { name: datasetName }),
           )
         ) {
           event.preventDefault();
@@ -40,15 +43,17 @@ export function DeleteEvaluationDatasetButton({
       }}
       className="space-y-2"
     >
-      {state.error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{state.error}</p>
+      {state.errorCode && (
+        <p className="text-sm text-red-600 dark:text-red-400">
+          {errorT(state.errorCode, state.errorParams)}
+        </p>
       )}
       <button
         type="submit"
         disabled={pending}
         className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
       >
-        {pending ? "Deleting…" : "Delete dataset"}
+        {pending ? t("deleting") : t("deleteDataset")}
       </button>
     </form>
   );

@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useTranslations } from "next-intl";
 
 import {
   type ActionState,
@@ -19,6 +20,8 @@ export function TriggerEvaluationRunForm({
   datasetId: string;
   disabled?: boolean;
 }) {
+  const t = useTranslations("evaluations");
+  const errorT = useTranslations("errors");
   const boundAction = triggerEvaluationRunAction.bind(
     null,
     workspaceSlug,
@@ -32,14 +35,12 @@ export function TriggerEvaluationRunForm({
   return (
     <form action={formAction} className="space-y-3">
       <p className="text-sm text-neutral-600 dark:text-neutral-400">
-        Run this dataset against a RAG configuration. The run is queued for the
-        evaluation worker, which evaluates every case and reports per-case and
-        summary metrics.
+        {t("runDescription")}
       </p>
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-1.5">
           <label htmlFor="run-chunk" className="block text-sm font-medium">
-            Chunk size
+            {t("chunkSize")}
           </label>
           <input
             id="run-chunk"
@@ -52,7 +53,7 @@ export function TriggerEvaluationRunForm({
         </div>
         <div className="space-y-1.5">
           <label htmlFor="run-topk" className="block text-sm font-medium">
-            Top-k
+            {t("topK")}
           </label>
           <input
             id="run-topk"
@@ -65,7 +66,7 @@ export function TriggerEvaluationRunForm({
         </div>
         <div className="space-y-1.5">
           <label htmlFor="run-embed" className="block text-sm font-medium">
-            Embedding model
+            {t("embeddingModel")}
           </label>
           <input
             id="run-embed"
@@ -77,7 +78,7 @@ export function TriggerEvaluationRunForm({
         </div>
         <div className="space-y-1.5">
           <label htmlFor="run-rerank" className="block text-sm font-medium">
-            Reranker
+            {t("reranker")}
           </label>
           <input
             id="run-rerank"
@@ -89,7 +90,7 @@ export function TriggerEvaluationRunForm({
         </div>
         <div className="space-y-1.5">
           <label htmlFor="run-prompt" className="block text-sm font-medium">
-            Prompt version
+            {t("promptVersion")}
           </label>
           <input
             id="run-prompt"
@@ -101,19 +102,21 @@ export function TriggerEvaluationRunForm({
         </div>
       </div>
 
-      {state.error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{state.error}</p>
+      {state.errorCode && (
+        <p className="text-sm text-red-600 dark:text-red-400">
+          {errorT(state.errorCode, state.errorParams)}
+        </p>
       )}
 
       <button
         type="submit"
         disabled={pending || disabled}
         title={
-          disabled ? "Add at least one case before running an evaluation" : undefined
+          disabled ? t("addCaseBeforeRun") : undefined
         }
         className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
       >
-        {pending ? "Queuing…" : "Run evaluation"}
+        {pending ? t("queuing") : t("runEvaluation")}
       </button>
     </form>
   );

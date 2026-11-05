@@ -13,7 +13,7 @@ vi.mock("@/db/schema", () => {
       { __table: name },
       {
         get: (target, prop) =>
-          prop in target ? (target as Record<string, unknown>)[prop] : `${name}.${String(prop)}`,
+          prop in target ? (target as Record<PropertyKey, unknown>)[prop] : `${name}.${String(prop)}`,
       },
     );
   return {

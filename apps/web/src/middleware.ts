@@ -1,4 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import createMiddleware from "next-intl/middleware";
+
+import { routing } from "@/i18n/routing";
 
 // ---------------------------------------------------------------------------
 // Rate limiting middleware using Redis fixed-window counters.
@@ -18,6 +21,7 @@ import { NextRequest, NextResponse } from "next/server";
 const API_LIMIT = parseInt(process.env.RATE_LIMIT_API ?? "60", 10);
 const AUTH_LIMIT = parseInt(process.env.RATE_LIMIT_AUTH ?? "20", 10);
 const WINDOW_SECONDS = 60;
+const handleI18nRouting = createMiddleware(routing);
 
 /**
  * Build a Redis rate-limit key scoped to the current fixed window.
@@ -41,9 +45,9 @@ function clientIdentifier(req: NextRequest): string {
 export async function middleware(req: NextRequest): Promise<NextResponse> {
   const { pathname } = req.nextUrl;
 
-  // Only rate-limit API routes.
+  // Keep API routes unlocalized and protected by the existing rate limiter.
   if (!pathname.startsWith("/api/")) {
-    return NextResponse.next();
+    return handleI18nRouting(req);
   }
 
   const isAuthRoute = pathname.startsWith("/api/auth/");
@@ -97,5 +101,5 @@ export async function middleware(req: NextRequest): Promise<NextResponse> {
 }
 
 export const config = {
-  matcher: ["/api/:path*"],
+  matcher: ["/api/:path*", "/((?!_next|_vercel|.*\\..*).*)"],
 };

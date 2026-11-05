@@ -1,6 +1,7 @@
 "use client";
 
 import { useActionState } from "react";
+import { useTranslations } from "next-intl";
 
 import {
   type ActionState,
@@ -16,6 +17,8 @@ export function DeleteKnowledgeBaseButton({
   knowledgeBaseId: string;
   knowledgeBaseName: string;
 }) {
+  const t = useTranslations("knowledgeBases");
+  const errorT = useTranslations("errors");
   const boundAction = deleteKnowledgeBaseAction.bind(
     null,
     workspaceSlug,
@@ -32,7 +35,7 @@ export function DeleteKnowledgeBaseButton({
       onSubmit={(event) => {
         if (
           !window.confirm(
-            `Delete "${knowledgeBaseName}"? This also deletes all of its documents and cannot be undone.`,
+            t("deleteConfirm", { name: knowledgeBaseName }),
           )
         ) {
           event.preventDefault();
@@ -40,15 +43,17 @@ export function DeleteKnowledgeBaseButton({
       }}
       className="space-y-2"
     >
-      {state.error && (
-        <p className="text-sm text-red-600 dark:text-red-400">{state.error}</p>
+      {state.errorCode && (
+        <p className="text-sm text-red-600 dark:text-red-400">
+          {errorT(state.errorCode, state.errorParams)}
+        </p>
       )}
       <button
         type="submit"
         disabled={pending}
         className="rounded-md border border-red-300 px-3 py-1.5 text-sm font-medium text-red-600 transition hover:bg-red-50 disabled:opacity-60 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
       >
-        {pending ? "Deleting…" : "Delete knowledge base"}
+        {pending ? t("deleting") : t("delete")}
       </button>
     </form>
   );

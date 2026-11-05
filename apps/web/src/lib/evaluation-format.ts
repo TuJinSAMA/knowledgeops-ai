@@ -3,15 +3,18 @@ import type { EvaluationRunConfig } from "./evaluation";
 // Metric keys shown (in order) for a run, with human labels. Per-case results
 // expose retrieval_hit / citation_accuracy / correctness / groundedness as
 // numeric scores; run summaries reuse the same labels for their aggregates.
-export const RUN_METRIC_LABELS: { key: string; label: string }[] = [
-  { key: "retrievalHit", label: "Retrieval hit" },
-  { key: "citationAccuracy", label: "Citation accuracy" },
-  { key: "correctness", label: "Correctness" },
-  { key: "groundedness", label: "Groundedness" },
+export const RUN_METRIC_KEYS = [
+  "retrievalHit",
+  "citationAccuracy",
+  "correctness",
+  "groundedness",
 ];
 
 /** Format a 0..1 numeric score (stored as a string by pg) as a percentage. */
-export function formatScore(value: string | number | null | undefined): string {
+export function formatScore(
+  value: string | number | null | undefined,
+  locale = "en-US",
+): string {
   if (value == null) {
     return "—";
   }
@@ -19,11 +22,18 @@ export function formatScore(value: string | number | null | undefined): string {
   if (!Number.isFinite(num)) {
     return "—";
   }
-  return `${(num * 100).toFixed(1)}%`;
+  return new Intl.NumberFormat(locale, {
+    style: "percent",
+    maximumFractionDigits: 1,
+    minimumFractionDigits: 1,
+  }).format(num);
 }
 
 /** Format an estimated USD cost (stored as a string by pg). */
-export function formatCost(value: string | number | null | undefined): string {
+export function formatCost(
+  value: string | number | null | undefined,
+  locale = "en-US",
+): string {
   if (value == null) {
     return "—";
   }
@@ -31,19 +41,29 @@ export function formatCost(value: string | number | null | undefined): string {
   if (!Number.isFinite(num)) {
     return "—";
   }
-  return `$${num.toFixed(6)}`;
+  return new Intl.NumberFormat(locale, {
+    style: "currency",
+    currency: "USD",
+    maximumFractionDigits: 6,
+  }).format(num);
 }
 
-export function formatLatency(ms: number | null | undefined): string {
-  return ms == null ? "—" : `${ms} ms`;
+export function formatLatency(
+  ms: number | null | undefined,
+  locale = "en-US",
+): string {
+  return ms == null
+    ? "—"
+    : `${new Intl.NumberFormat(locale).format(ms)} ms`;
 }
 
 /** Render a run config object as a compact "key=value · key=value" string. */
 export function formatConfig(
   config: EvaluationRunConfig | Record<string, unknown> | null,
+  defaultsLabel = "defaults",
 ): string {
   if (!config || Object.keys(config).length === 0) {
-    return "defaults";
+    return defaultsLabel;
   }
   return Object.entries(config)
     .map(([k, v]) => `${k}=${String(v)}`)
