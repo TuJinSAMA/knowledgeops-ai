@@ -55,6 +55,13 @@ def test_estimate_tokens():
     assert estimate_tokens("a" * 40) == 10
 
 
+def test_estimate_tokens_counts_cjk_characters():
+    # 11 Chinese characters -> 11 tokens (not 11 / 4 = 3)
+    assert estimate_tokens("云席客服知识库问答系统") == 11
+    # Mixed: 4 Chinese chars (4) + 8 ASCII chars (8 / 4 = 2) -> 6
+    assert estimate_tokens("云席产品abcd1234") == 6
+
+
 def test_invalid_params_raise():
     import pytest
 

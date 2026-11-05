@@ -38,17 +38,29 @@ _STOPWORDS = frozenset(
 )
 
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
+_CJK_SPAN_PATTERN = re.compile(r"[\u4e00-\u9fff]+")
+_CJK_STOPWORDS = frozenset(
+    "的了是在和有与及或等把被让给对从向到于也都就而且并便可会要这那此其我你他她它们个位条项种"
+)
 
 
 def normalize_tokens(value: str | None) -> set[str]:
-    """Lowercase, split on word characters, and drop stopwords."""
+    """Lowercase, split on word characters and CJK unigrams/bigrams, and drop stopwords."""
     if not value:
         return set()
-    return {
+    lowered = value.lower()
+    tokens = {
         token
-        for token in _TOKEN_PATTERN.findall(value.lower())
+        for token in _TOKEN_PATTERN.findall(lowered)
         if token not in _STOPWORDS
     }
+    for span in _CJK_SPAN_PATTERN.findall(lowered):
+        cleaned = "".join(ch for ch in span if ch not in _CJK_STOPWORDS)
+        for ch in cleaned:
+            tokens.add(ch)
+        for i in range(len(cleaned) - 1):
+            tokens.add(cleaned[i : i + 2])
+    return tokens
 
 
 def _round(value: float) -> float:

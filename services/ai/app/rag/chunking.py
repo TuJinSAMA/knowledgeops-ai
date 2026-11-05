@@ -13,11 +13,13 @@ Properties this guarantees, because the RAG/evaluation core depends on them:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 # Ordered from coarsest to finest. The empty string is the final fallback and
 # forces a hard character split when a single fragment still exceeds the size.
 _SEPARATORS: tuple[str, ...] = ("\n\n", "\n", ". ", " ", "")
+_CJK_CHAR_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 
 
 @dataclass(frozen=True)
@@ -30,15 +32,17 @@ class TextChunk:
 
 
 def estimate_tokens(text: str) -> int:
-    """Rough token estimate (~4 characters per token for English-like text).
+    """Rough token estimate (~1 token per CJK char, ~4 chars per token for ASCII/other).
 
     This is a heuristic, not a tokenizer; it avoids a heavyweight dependency
-    while giving a reasonable figure for cost/length budgeting. At least 1 for
-    any non-empty text.
+    while giving a reasonable figure for cost/length budgeting across both
+    English and Chinese text. At least 1 for any non-empty text.
     """
     if not text:
         return 0
-    return max(1, round(len(text) / 4))
+    cjk_count = len(_CJK_CHAR_PATTERN.findall(text))
+    non_cjk_count = len(text) - cjk_count
+    return max(1, cjk_count + round(non_cjk_count / 4))
 
 
 def chunk_text(

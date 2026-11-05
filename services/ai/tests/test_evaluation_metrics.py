@@ -162,3 +162,30 @@ def test_summarize_empty():
     assert summary["case_count"] == 0
     assert summary["refused_count"] == 0
     assert "retrieval_hit" not in summary
+
+
+def test_normalize_tokens_extracts_cjk_unigrams_and_bigrams():
+    tokens = metrics.normalize_tokens("Pro 套餐的月费是 899 元")
+    assert "pro" in tokens
+    assert "899" in tokens
+    assert "套" in tokens
+    assert "餐" in tokens
+    assert "套餐" in tokens
+    assert "月费" in tokens
+    assert "的" not in tokens
+    assert "是" not in tokens
+
+
+def test_correctness_and_groundedness_support_chinese_text():
+    score = metrics.correctness_approx(
+        "云席是面向客服团队的知识库问答产品",
+        "面向客服团队的知识库产品",
+        None,
+    )
+    assert score is not None and score > 0.7
+
+    grounded = metrics.groundedness_approx(
+        "购买后 7 天内可申请全额退款",
+        "自成功付款之日起 7 天内，可申请全额退款。",
+    )
+    assert grounded is not None and grounded > 0.7
