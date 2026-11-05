@@ -64,6 +64,7 @@ _REFUSAL_FALLBACK_PHRASES: tuple[str, ...] = (
     "资料不足",
     "未提及",
     "无法从现有资料",
+    "无法回答",
 )
 
 
@@ -299,7 +300,8 @@ def stream_answer_events(
         raw_parts.append(delta)
         if not prefix_decided:
             prefix_buf += delta
-            if len(prefix_buf) >= 12 or "\n" in prefix_buf:
+            trimmed_buf = prefix_buf.lstrip()
+            if len(trimmed_buf) >= 12 or "\n" in trimmed_buf:
                 prefix_decided = True
                 stripped = _REFUSAL_PREFIX_PATTERN.sub("", prefix_buf, count=1)
                 if stripped:

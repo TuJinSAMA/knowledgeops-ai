@@ -112,6 +112,12 @@ def test_detect_and_clean_refusal_handles_sentinel_and_fallback_phrases():
     )
     assert en_refused is True
 
+    cleaned_zh_fallback, zh_refused = detect_and_clean_refusal(
+        "根据现有资料，无法回答该问题 [1]。"
+    )
+    assert zh_refused is True
+    assert "[1]" not in cleaned_zh_fallback
+
     _, normal = detect_and_clean_refusal("Pro 套餐每月 ¥899，包含 5 个座席 [1]。")
     assert normal is False
 
@@ -124,7 +130,7 @@ def test_stream_and_generate_strip_refusal_sentinel_and_clear_citations(monkeypa
         "retrieve",
         lambda *a, **kw: [_chunk("c1", "d1", 0, "unrelated pricing doc")],
     )
-    llm = _StubRefusalLLM("[REFUSED] 抱歉，现有资料中没有关于年假的信息 [1]。")
+    llm = _StubRefusalLLM("\n[REFUSED] 抱歉，现有资料中没有关于年假的信息 [1]。")
 
     res = generate_answer(
         None,
