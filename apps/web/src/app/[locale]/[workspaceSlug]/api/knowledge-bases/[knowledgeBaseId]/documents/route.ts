@@ -47,7 +47,10 @@ export async function POST(request: Request, { params }: RouteParams) {
     const file = formData.get("file");
     if (!(file instanceof File)) {
       return NextResponse.json(
-        { error: "Missing 'file' field in multipart form data" },
+        {
+          error: "Missing 'file' field in multipart form data",
+          errorCode: "UPLOAD_FILE_MISSING",
+        },
         { status: 400 },
       );
     }
@@ -74,7 +77,10 @@ export async function POST(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     if (error instanceof UploadError) {
-      return NextResponse.json({ error: error.message }, { status: error.status });
+      return NextResponse.json(
+        { error: error.message, errorCode: error.code },
+        { status: error.status },
+      );
     }
     throw error;
   }

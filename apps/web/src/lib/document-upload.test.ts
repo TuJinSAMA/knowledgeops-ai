@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 vi.mock("@/db", () => ({ db: {} }));
 vi.mock("@/env", () => ({ env: { maxUploadBytes: 0, fileStorageDir: "./data/uploads" } }));
 
-import { resolveMimeType, UploadError } from "@/lib/document-upload";
+import { ingestUploadedFile, resolveMimeType, UploadError } from "@/lib/document-upload";
 
 describe("resolveMimeType", () => {
   it("accepts whitelisted declared types", () => {
@@ -28,8 +28,48 @@ describe("resolveMimeType", () => {
     expect(resolveMimeType("", "doc.pdf")).toBe("application/pdf");
   });
 
-  it("rejects unsupported types", () => {
-    expect(() => resolveMimeType("image/png", "x.png")).toThrow(UploadError);
-    expect(() => resolveMimeType("", "archive.zip")).toThrow(UploadError);
+  it("rejects unsupported types with UPLOAD_UNSUPPORTED_TYPE code", () => {
+    expect(() => resolveMimeType("image/png", "x.png")).toThrow(
+      expect.objectContaining({ code: "UPLOAD_UNSUPPORTED_TYPE" }),
+    );
+    expect(() => resolveMimeType("", "archive.zip")).toThrow(
+      expect.objectContaining({ code: "UPLOAD_UNSUPPORTED_TYPE" }),
+    );
+  });
+
+  it("rejects empty files with UPLOAD_FILE_EMPTY code", async () => {
+    const emptyFile = new File([], "empty.md", { type: "text/markdown" });
+    await expect(
+      ingestUploadedFile({
+        workspaceId: "ws-1",
+        knowledgeBaseId: "kb-1",
+        file: emptyFile,
+      }),
+    ).rejects.toMatchObject({
+      name: "UploadError",
+      code: "UPLOAD_FILE_EMPTY",
+    });
+  });
+
+  it("rejects oversized files with UPLOAD_FILE_TOO_LARGE code", async () => {
+    const { env } = await import("@/env");
+    env.maxUploadBytes = 4;
+    try {
+      const bigFile = new File(["12345678"], "big.md", {
+        type: "text/markdown",
+      });
+      await expect(
+        ingestUploadedFile({
+          workspaceId: "ws-1",
+          knowledgeBaseId: "kb-1",
+          file: bigFile,
+        }),
+      ).rejects.toMatchObject({
+        name: "UploadError",
+        code: "UPLOAD_FILE_TOO_LARGE",
+      });
+    } finally {
+      env.maxUploadBytes = 0;
+    }
   });
 });

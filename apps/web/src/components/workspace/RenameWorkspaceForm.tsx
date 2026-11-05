@@ -4,7 +4,7 @@ import { useActionState } from "react";
 import { useTranslations } from "next-intl";
 
 import {
-  type ActionState,
+  type RenameWorkspaceActionState,
   renameWorkspaceAction,
 } from "@/lib/workspace-actions";
 
@@ -20,7 +20,10 @@ export function RenameWorkspaceForm({
   const t = useTranslations("settings");
   const errorT = useTranslations("errors");
   const boundAction = renameWorkspaceAction.bind(null, workspaceId, slug);
-  const [state, formAction, pending] = useActionState<ActionState, FormData>(
+  const [state, formAction, pending] = useActionState<
+    RenameWorkspaceActionState,
+    FormData
+  >(
     boundAction,
     {},
   );
@@ -47,13 +50,20 @@ export function RenameWorkspaceForm({
         </p>
       )}
 
-      <button
-        type="submit"
-        disabled={pending}
-        className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
-      >
-        {pending ? t("saving") : t("saveChanges")}
-      </button>
+      <div className="flex items-center gap-3">
+        <button
+          type="submit"
+          disabled={pending}
+          className="rounded-md bg-neutral-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-neutral-700 disabled:opacity-60 dark:bg-white dark:text-neutral-900 dark:hover:bg-neutral-200"
+        >
+          {pending ? t("saving") : t("saveChanges")}
+        </button>
+        {state.ok && !pending && (
+          <span className="text-xs text-emerald-600 dark:text-emerald-400">
+            {t("saved")}
+          </span>
+        )}
+      </div>
     </form>
   );
 }

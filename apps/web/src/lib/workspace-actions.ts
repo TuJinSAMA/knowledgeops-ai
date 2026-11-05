@@ -4,11 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { AuthzError, requireWorkspaceMember } from "./authz";
-import type { ActionState } from "./action-errors";
+import { type ActionState, withLocalePath } from "./action-errors";
 import { requireUser } from "./session";
 import { createWorkspaceForUser, renameWorkspace } from "./workspace";
 
 export type { ActionState } from "./action-errors";
+export type RenameWorkspaceActionState = ActionState & { ok?: boolean };
 
 /**
  * Create a new workspace owned by the current user, then navigate into it.
@@ -25,7 +26,7 @@ export async function createWorkspaceAction(
   }
 
   const workspace = await createWorkspaceForUser(user.id, name);
-  redirect(`/${workspace.slug}`);
+  redirect(await withLocalePath(`/${workspace.slug}`));
 }
 
 /**
@@ -34,9 +35,9 @@ export async function createWorkspaceAction(
 export async function renameWorkspaceAction(
   workspaceId: string,
   slug: string,
-  _prev: ActionState,
+  _prev: RenameWorkspaceActionState,
   formData: FormData,
-): Promise<ActionState> {
+): Promise<RenameWorkspaceActionState> {
   const name = String(formData.get("name") ?? "").trim();
   if (!name) {
     return { errorCode: "WORKSPACE_NAME_REQUIRED" };
@@ -53,5 +54,6 @@ export async function renameWorkspaceAction(
 
   await renameWorkspace(workspaceId, name);
   revalidatePath(`/${slug}`, "layout");
-  return {};
+  revalidatePath(await withLocalePath(`/${slug}`), "layout");
+  return { ok: true };
 }

@@ -348,6 +348,7 @@
     "workspaceName": "Workspace name",
     "saving": "Saving…",
     "saveChanges": "Save changes",
+    "saved": "Saved",
     "creating": "Creating…",
     "createWorkspace": "Create workspace",
     "workspacePlaceholder": "Acme Inc.",
@@ -372,6 +373,10 @@
     "FEEDBACK_COMMENT_TOO_LONG": "Comment must be {max} characters or fewer.",
     "FEEDBACK_ANSWER_NOT_FOUND": "Answer not found.",
     "FEEDBACK_REVIEW_STATUS_INVALID": "Review status is invalid.",
-    "FEEDBACK_NOT_FOUND": "Feedback not found."
+    "FEEDBACK_NOT_FOUND": "Feedback not found.",
+    "UPLOAD_FILE_MISSING": "Please choose a file to upload.",
+    "UPLOAD_UNSUPPORTED_TYPE": "Unsupported file type. Allowed: Markdown (.md), plain text (.txt), or PDF (.pdf).",
+    "UPLOAD_FILE_EMPTY": "File is empty.",
+    "UPLOAD_FILE_TOO_LARGE": "File exceeds the maximum allowed upload size."
   }
 }

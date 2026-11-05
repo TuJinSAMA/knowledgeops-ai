@@ -4,7 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { AUDIT_ACTIONS, recordAudit } from "./audit";
-import type { ActionErrorCode, ActionState } from "./action-errors";
+import {
+  type ActionErrorCode,
+  type ActionState,
+  withLocalePath,
+} from "./action-errors";
 import { AuthzError, requireWorkspaceMemberBySlug } from "./authz";
 import {
   createEvaluationCase,
@@ -94,8 +98,8 @@ export async function createEvaluationDatasetAction(
     return { errorCode: "EVALUATION_CREATE_FAILED" };
   }
 
-  revalidatePath(`/${workspaceSlug}/evaluations`);
-  redirect(`/${workspaceSlug}/evaluations/${dataset.id}`);
+  revalidatePath(await withLocalePath(`/${workspaceSlug}/evaluations`));
+  redirect(await withLocalePath(`/${workspaceSlug}/evaluations/${dataset.id}`));
 }
 
 /**
@@ -119,8 +123,8 @@ export async function deleteEvaluationDatasetAction(
     return { errorCode: "DATASET_NOT_FOUND" };
   }
 
-  revalidatePath(`/${workspaceSlug}/evaluations`);
-  redirect(`/${workspaceSlug}/evaluations`);
+  revalidatePath(await withLocalePath(`/${workspaceSlug}/evaluations`));
+  redirect(await withLocalePath(`/${workspaceSlug}/evaluations`));
 }
 
 /**
@@ -161,7 +165,9 @@ export async function createEvaluationCaseAction(
     return { errorCode: "DATASET_NOT_FOUND" };
   }
 
-  revalidatePath(`/${workspaceSlug}/evaluations/${datasetId}`);
+  revalidatePath(
+    await withLocalePath(`/${workspaceSlug}/evaluations/${datasetId}`),
+  );
   return {};
 }
 
@@ -191,7 +197,9 @@ export async function deleteEvaluationCaseAction(
     return { errorCode: "EVALUATION_CASE_NOT_FOUND" };
   }
 
-  revalidatePath(`/${workspaceSlug}/evaluations/${datasetId}`);
+  revalidatePath(
+    await withLocalePath(`/${workspaceSlug}/evaluations/${datasetId}`),
+  );
   return {};
 }
 
@@ -246,6 +254,12 @@ export async function triggerEvaluationRunAction(
     target: { type: "evaluation_run", id: run.id },
     metadata: { dataset_id: datasetId, config },
   });
-  revalidatePath(`/${workspaceSlug}/evaluations/${datasetId}`);
-  redirect(`/${workspaceSlug}/evaluations/${datasetId}/runs/${run.id}`);
+  revalidatePath(
+    await withLocalePath(`/${workspaceSlug}/evaluations/${datasetId}`),
+  );
+  redirect(
+    await withLocalePath(
+      `/${workspaceSlug}/evaluations/${datasetId}/runs/${run.id}`,
+    ),
+  );
 }

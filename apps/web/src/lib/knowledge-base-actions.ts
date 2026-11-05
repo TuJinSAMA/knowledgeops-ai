@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { AUDIT_ACTIONS, recordAudit } from "./audit";
-import type { ActionState } from "./action-errors";
+import { type ActionState, withLocalePath } from "./action-errors";
 import { AuthzError, requireWorkspaceMemberBySlug } from "./authz";
 import {
   createKnowledgeBase,
@@ -50,8 +50,8 @@ export async function createKnowledgeBaseAction(
     target: { type: "knowledge_base", id: kb.id },
     metadata: { name: kb.name },
   });
-  revalidatePath(`/${workspaceSlug}/knowledge-bases`);
-  redirect(`/${workspaceSlug}/knowledge-bases/${kb.id}`);
+  revalidatePath(await withLocalePath(`/${workspaceSlug}/knowledge-bases`));
+  redirect(await withLocalePath(`/${workspaceSlug}/knowledge-bases/${kb.id}`));
 }
 
 /**
@@ -89,6 +89,6 @@ export async function deleteKnowledgeBaseAction(
     action: AUDIT_ACTIONS.KNOWLEDGE_BASE_DELETE,
     target: { type: "knowledge_base", id: knowledgeBaseId },
   });
-  revalidatePath(`/${workspaceSlug}/knowledge-bases`);
-  redirect(`/${workspaceSlug}/knowledge-bases`);
+  revalidatePath(await withLocalePath(`/${workspaceSlug}/knowledge-bases`));
+  redirect(await withLocalePath(`/${workspaceSlug}/knowledge-bases`));
 }

@@ -42,6 +42,7 @@ export function DocumentsPanel({
   canUpload: boolean;
 }) {
   const t = useTranslations("knowledgeBases");
+  const errorT = useTranslations("errors");
   const [documents, setDocuments] = useState<DocumentSummary[]>(initialDocuments);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,8 +80,17 @@ export function DocumentsPanel({
         formData.append("file", file);
         const res = await fetch(endpoint, { method: "POST", body: formData });
         if (!res.ok) {
-          const data = (await res.json().catch(() => ({}))) as { error?: string };
-          setError(data.error ?? t("uploadFailedStatus", { status: res.status }));
+          const data = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            errorCode?: string;
+          };
+          const localizedError =
+            data.errorCode && errorT.has(data.errorCode)
+              ? errorT(data.errorCode)
+              : data.error;
+          setError(
+            localizedError ?? t("uploadFailedStatus", { status: res.status }),
+          );
           return;
         }
         if (fileInputRef.current) {
@@ -93,7 +103,7 @@ export function DocumentsPanel({
         setUploading(false);
       }
     },
-    [endpoint, refresh, t],
+    [endpoint, refresh, t, errorT],
   );
 
   return (

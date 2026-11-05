@@ -25,17 +25,25 @@ const EXTENSION_MIME: Record<string, AllowedMimeType> = {
   pdf: "application/pdf",
 };
 
+export type UploadErrorCode =
+  | "UPLOAD_FILE_MISSING"
+  | "UPLOAD_UNSUPPORTED_TYPE"
+  | "UPLOAD_FILE_EMPTY"
+  | "UPLOAD_FILE_TOO_LARGE";
+
 /**
- * Error carrying an HTTP status so the upload route can translate it directly
- * into a response (400 invalid type, 413 too large).
+ * Error carrying an HTTP status and a machine-readable code so the upload
+ * route and client UI can translate it cleanly.
  */
 export class UploadError extends Error {
   readonly status: 400 | 413;
+  readonly code: UploadErrorCode;
 
-  constructor(status: 400 | 413, message: string) {
+  constructor(status: 400 | 413, code: UploadErrorCode, message: string) {
     super(message);
     this.name = "UploadError";
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -63,6 +71,7 @@ export function resolveMimeType(
   }
   throw new UploadError(
     400,
+    "UPLOAD_UNSUPPORTED_TYPE",
     `Unsupported file type. Allowed: ${ALLOWED_MIME_TYPES.join(", ")}`,
   );
 }
@@ -95,11 +104,12 @@ export async function ingestUploadedFile(params: {
   const mimeType = resolveMimeType(file.type, filename);
 
   if (file.size === 0) {
-    throw new UploadError(400, "File is empty");
+    throw new UploadError(400, "UPLOAD_FILE_EMPTY", "File is empty");
   }
   if (env.maxUploadBytes > 0 && file.size > env.maxUploadBytes) {
     throw new UploadError(
       413,
+      "UPLOAD_FILE_TOO_LARGE",
       `File exceeds the maximum upload size of ${env.maxUploadBytes} bytes`,
     );
   }
@@ -109,6 +119,7 @@ export async function ingestUploadedFile(params: {
   if (env.maxUploadBytes > 0 && bytes.byteLength > env.maxUploadBytes) {
     throw new UploadError(
       413,
+      "UPLOAD_FILE_TOO_LARGE",
       `File exceeds the maximum upload size of ${env.maxUploadBytes} bytes`,
     );
   }

@@ -285,7 +285,7 @@
   "settings": {
     "title": "工作区设置", "slug": "Slug：{slug}", "general": "常规",
     "adminOnly": "仅 ADMIN 或 OWNER 可以更改工作区设置。您的角色是 {role}。",
-    "workspaceName": "工作区名称", "saving": "正在保存…", "saveChanges": "保存更改",
+    "workspaceName": "工作区名称", "saving": "正在保存…", "saveChanges": "保存更改", "saved": "已保存",
     "creating": "正在创建…", "createWorkspace": "创建工作区", "workspacePlaceholder": "Acme 公司",
     "newWorkspaceTitle": "创建工作区",
     "newWorkspaceDescription": "工作区是用于隔离知识与成员的独立租户空间。",
@@ -308,6 +308,10 @@
     "FEEDBACK_COMMENT_TOO_LONG": "评论不能超过 {max} 个字符。",
     "FEEDBACK_ANSWER_NOT_FOUND": "未找到回答。",
     "FEEDBACK_REVIEW_STATUS_INVALID": "审核状态无效。",
-    "FEEDBACK_NOT_FOUND": "未找到反馈。"
+    "FEEDBACK_NOT_FOUND": "未找到反馈。",
+    "UPLOAD_FILE_MISSING": "请选择要上传的文件。",
+    "UPLOAD_UNSUPPORTED_TYPE": "不支持的文件类型。仅支持 Markdown (.md)、纯文本 (.txt) 或 PDF (.pdf)。",
+    "UPLOAD_FILE_EMPTY": "文件内容为空。",
+    "UPLOAD_FILE_TOO_LARGE": "文件大小超出允许的上传上限。"
   }
 }
