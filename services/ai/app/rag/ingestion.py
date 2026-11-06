@@ -60,6 +60,7 @@ def process_ingestion_job(session: Session, job: dict[str, Any]) -> None:
             loaded.text,
             chunk_size=settings.chunk_size,
             chunk_overlap=settings.chunk_overlap,
+            document_title=document.get("title"),
         )
         if not chunks:
             raise IngestionError("No chunks produced from document text.")
@@ -95,7 +96,7 @@ def _fetch_document(session: Session, document_id: str) -> dict[str, Any] | None
     row = (
         session.execute(
             text(
-                "SELECT id, mime_type, source_metadata "
+                "SELECT id, title, mime_type, source_metadata "
                 "FROM documents WHERE id = :id"
             ),
             {"id": document_id},

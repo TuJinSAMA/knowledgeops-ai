@@ -71,3 +71,25 @@ def test_invalid_params_raise():
         chunk_text("x", chunk_size=100, chunk_overlap=100)
     with pytest.raises(ValueError):
         chunk_text("x", chunk_size=100, chunk_overlap=-1)
+
+
+def test_contextual_chunking_injects_document_and_section_breadcrumb():
+    md = (
+        "# 退订与退款政策\n\n"
+        "## 全额退款窗口\n\n"
+        "自成功付款之日起 7 天内，可申请全额退款。\n\n"
+        "## 如何申请\n\n"
+        "发送邮件至 billing@nimbusdesk.example 申请退款。"
+    )
+    chunks = chunk_text(
+        md,
+        chunk_size=90,
+        chunk_overlap=0,
+        document_title="03-refund-policy.md",
+    )
+    assert len(chunks) >= 2
+    assert any("03-refund-policy.md" in c.content for c in chunks)
+    # Later chunk under '## 如何申请' carries the section context
+    apply_chunks = [c for c in chunks if "billing@nimbusdesk.example" in c.content]
+    assert apply_chunks
+    assert "退订与退款政策" in apply_chunks[0].content
