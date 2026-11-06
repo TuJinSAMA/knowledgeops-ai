@@ -34,6 +34,25 @@ function statusBadge(status: EvaluationRunStatus): string {
   }
 }
 
+const KNOWN_FAILURE_CATEGORIES = new Set([
+  "PASS",
+  "UNEXPECTED_REFUSAL",
+  "RETRIEVAL_MISS",
+  "BAD_CITATION",
+  "HALLUCINATION_RISK",
+  "INCOMPLETE_ANSWER",
+]);
+
+function diagnosisBadgeClass(category: string): string {
+  if (category === "PASS") {
+    return "bg-emerald-100 text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300";
+  }
+  if (category === "HALLUCINATION_RISK" || category === "UNEXPECTED_REFUSAL") {
+    return "bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-300";
+  }
+  return "bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300";
+}
+
 export default async function EvaluationRunPage({
   params,
 }: PageProps<"/[locale]/[workspaceSlug]/evaluations/[datasetId]/runs/[runId]">) {
@@ -108,6 +127,25 @@ export default async function EvaluationRunPage({
         ))}
       </section>
 
+      {run.summaryMetrics?.failure_counts &&
+      typeof run.summaryMetrics.failure_counts === "object" ? (
+        <div className="mt-4 flex flex-wrap gap-2 text-xs">
+          {Object.entries(
+            run.summaryMetrics.failure_counts as Record<string, number>,
+          ).map(([cat, count]) => (
+            <span
+              key={cat}
+              className={`rounded-full px-2.5 py-0.5 font-medium ${diagnosisBadgeClass(cat)}`}
+            >
+              {KNOWN_FAILURE_CATEGORIES.has(cat)
+                ? t(`failureCategories.${cat}`)
+                : cat}
+              : {count}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       {/* Per-case results */}
       <section className="mt-8">
         <h2 className="text-lg font-medium">{t("perCaseResults")}</h2>
@@ -123,6 +161,7 @@ export default async function EvaluationRunPage({
               <thead className="border-b border-neutral-200 text-xs uppercase tracking-wide text-neutral-500 dark:border-neutral-800">
                 <tr>
                   <th className="px-4 py-3 font-medium">{t("question")}</th>
+                  <th className="px-4 py-3 font-medium">{t("diagnosis")}</th>
                   <th className="px-4 py-3 font-medium">{t("retrieval")}</th>
                   <th className="px-4 py-3 font-medium">{t("citation")}</th>
                   <th className="px-4 py-3 font-medium">{t("correct")}</th>
@@ -132,32 +171,70 @@ export default async function EvaluationRunPage({
                 </tr>
               </thead>
               <tbody>
-                {results.map((r) => (
-                  <tr
-                    key={r.id}
-                    className="border-b border-neutral-100 last:border-0 dark:border-neutral-900"
-                  >
-                    <td className="px-4 py-3">{r.question.slice(0, 80)}</td>
-                    <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {formatScore(r.retrievalHit, locale)}
-                    </td>
-                    <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {formatScore(r.citationAccuracy, locale)}
-                    </td>
-                    <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {formatScore(r.correctness, locale)}
-                    </td>
-                    <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
-                      {formatScore(r.groundedness, locale)}
-                    </td>
-                    <td className="px-4 py-3 text-neutral-500">
-                      {formatLatency(r.latencyMs, locale)}
-                    </td>
-                    <td className="px-4 py-3 text-neutral-500">
-                      {formatCost(r.costEstimate, locale)}
-                    </td>
-                  </tr>
-                ))}
+                {results.map((r) => {
+                  const raw = (r.raw ?? {}) as {
+                    answer?: string;
+                    failure_category?: string;
+                    judge_rationale?: string;
+                  };
+                  const category = raw.failure_category;
+                  return (
+                    <tr
+                      key={r.id}
+                      className="border-b border-neutral-100 align-top last:border-0 dark:border-neutral-900"
+                    >
+                      <td className="px-4 py-3">
+                        <div className="font-medium">{r.question.slice(0, 80)}</div>
+                        {raw.answer && (
+                          <details className="mt-1 text-xs text-neutral-500">
+                            <summary className="cursor-pointer hover:underline">
+                              {t("viewAnswerDetail")}
+                            </summary>
+                            <p className="mt-1 whitespace-pre-wrap rounded border border-neutral-200 bg-neutral-50 p-2 text-neutral-700 dark:border-neutral-800 dark:bg-neutral-950 dark:text-neutral-300">
+                              {raw.answer}
+                            </p>
+                            {raw.judge_rationale && (
+                              <p className="mt-1 text-neutral-500">
+                                {t("judgeRationale")}: {raw.judge_rationale}
+                              </p>
+                            )}
+                          </details>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {category ? (
+                          <span
+                            className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${diagnosisBadgeClass(category)}`}
+                          >
+                            {KNOWN_FAILURE_CATEGORIES.has(category)
+                              ? t(`failureCategories.${category}`)
+                              : category}
+                          </span>
+                        ) : (
+                          <span className="text-neutral-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
+                        {formatScore(r.retrievalHit, locale)}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
+                        {formatScore(r.citationAccuracy, locale)}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
+                        {formatScore(r.correctness, locale)}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-600 dark:text-neutral-400">
+                        {formatScore(r.groundedness, locale)}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500">
+                        {formatLatency(r.latencyMs, locale)}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-500">
+                        {formatCost(r.costEstimate, locale)}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

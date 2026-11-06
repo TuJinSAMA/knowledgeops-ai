@@ -195,7 +195,11 @@
     "queryRewriteDisabled": "Disabled",
     "embeddingModel": "Embedding model",
     "reranker": "Reranker",
+    "rerankerNone": "None (first-stage only)",
+    "rerankerHeuristic": "Heuristic cross-feature reranker",
+    "rerankerLlm": "LLM passage reranker",
     "promptVersion": "Prompt version",
+    "useLlmJudge": "Enable LLM-as-a-judge semantic scoring & rationale",
     "addCaseBeforeRun": "Add at least one case before running an evaluation",
     "queuing": "Queuing…",
     "runEvaluation": "Run evaluation",
@@ -214,6 +218,9 @@
     "startedAt": "· started {date}",
     "finishedAt": "· finished {date}",
     "perCaseResults": "Per-case results",
+    "diagnosis": "Diagnosis",
+    "viewAnswerDetail": "View generated answer",
+    "judgeRationale": "Judge rationale",
     "noPendingResults": "No results yet — the evaluation worker has not finished this run.",
     "noResults": "No results recorded for this run.",
     "retrieval": "Retrieval",
@@ -224,7 +231,15 @@
     "cost": "Cost",
     "defaults": "defaults",
     "statusLabels": { "PENDING": "Pending", "RUNNING": "Running", "COMPLETED": "Completed", "FAILED": "Failed" },
-    "metricLabels": { "retrievalHit": "Retrieval hit", "citationAccuracy": "Citation accuracy", "correctness": "Correctness", "groundedness": "Groundedness" }
+    "metricLabels": { "retrievalHit": "Retrieval hit", "citationAccuracy": "Citation accuracy", "correctness": "Correctness", "groundedness": "Groundedness" },
+    "failureCategories": {
+      "PASS": "Pass",
+      "UNEXPECTED_REFUSAL": "Unexpected refusal",
+      "RETRIEVAL_MISS": "Retrieval miss",
+      "BAD_CITATION": "Citation drift",
+      "HALLUCINATION_RISK": "Hallucination risk",
+      "INCOMPLETE_ANSWER": "Incomplete answer"
+    }
   },
   "feedback": {
     "title": "Answer feedback",

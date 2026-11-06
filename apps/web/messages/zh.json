@@ -195,7 +195,11 @@
     "queryRewriteDisabled": "关闭",
     "embeddingModel": "嵌入模型",
     "reranker": "重排序器",
+    "rerankerNone": "不启用（仅一阶段召回）",
+    "rerankerHeuristic": "混合特征精排（Heuristic Reranker）",
+    "rerankerLlm": "大模型重排（LLM Reranker）",
     "promptVersion": "Prompt 版本",
+    "useLlmJudge": "启用 LLM-as-a-Judge 语义评分与评语诊断",
     "addCaseBeforeRun": "运行评估前请至少添加一个用例",
     "queuing": "正在入队…",
     "runEvaluation": "运行评估",
@@ -214,6 +218,9 @@
     "startedAt": "· 开始于 {date}",
     "finishedAt": "· 完成于 {date}",
     "perCaseResults": "逐用例结果",
+    "diagnosis": "诊断结论",
+    "viewAnswerDetail": "查看生成回答",
+    "judgeRationale": "裁判评语",
     "noPendingResults": "暂未产生结果——评估 worker 尚未完成此次运行。",
     "noResults": "此次运行没有记录结果。",
     "retrieval": "检索",
@@ -224,7 +231,15 @@
     "cost": "成本",
     "defaults": "默认配置",
     "statusLabels": { "PENDING": "等待中", "RUNNING": "运行中", "COMPLETED": "已完成", "FAILED": "失败" },
-    "metricLabels": { "retrievalHit": "检索命中", "citationAccuracy": "引用准确度", "correctness": "正确性", "groundedness": "有据性" }
+    "metricLabels": { "retrievalHit": "检索命中", "citationAccuracy": "引用准确度", "correctness": "正确性", "groundedness": "有据性" },
+    "failureCategories": {
+      "PASS": "通过",
+      "UNEXPECTED_REFUSAL": "意外拒答",
+      "RETRIEVAL_MISS": "检索未命中",
+      "BAD_CITATION": "引用偏离",
+      "HALLUCINATION_RISK": "幻觉风险",
+      "INCOMPLETE_ANSWER": "回答不完整"
+    }
   },
   "feedback": {
     "title": "回答反馈",

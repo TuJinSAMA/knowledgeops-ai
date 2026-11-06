@@ -110,13 +110,16 @@ export function TriggerEvaluationRunForm({
           <label htmlFor="run-rerank" className="block text-sm font-medium">
             {t("reranker")}
           </label>
-          <input
+          <select
             id="run-rerank"
             name="reranker"
-            type="text"
-            placeholder="none"
+            defaultValue=""
             className={inputClass}
-          />
+          >
+            <option value="">{t("rerankerNone")}</option>
+            <option value="heuristic">{t("rerankerHeuristic")}</option>
+            <option value="llm">{t("rerankerLlm")}</option>
+          </select>
         </div>
         <div className="space-y-1.5">
           <label htmlFor="run-prompt" className="block text-sm font-medium">
@@ -131,6 +134,15 @@ export function TriggerEvaluationRunForm({
           />
         </div>
       </div>
+
+      <label className="flex items-center gap-2 text-xs text-neutral-600 dark:text-neutral-400">
+        <input
+          type="checkbox"
+          name="useLlmJudge"
+          className="rounded border-neutral-300"
+        />
+        {t("useLlmJudge")}
+      </label>
 
       {state.errorCode && (
         <p className="text-sm text-red-600 dark:text-red-400">

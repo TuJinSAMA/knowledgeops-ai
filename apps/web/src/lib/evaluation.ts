@@ -353,6 +353,7 @@ export type EvaluationRunConfig = {
   embeddingModel?: string;
   reranker?: string;
   promptVersion?: string;
+  useLlmJudge?: boolean;
   [key: string]: unknown;
 };
 

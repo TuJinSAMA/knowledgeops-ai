@@ -255,6 +255,10 @@ export async function triggerEvaluationRunAction(
   if (promptVersion) {
     config.promptVersion = promptVersion;
   }
+  const useLlmJudge = String(formData.get("useLlmJudge") ?? "").trim();
+  if (useLlmJudge === "on" || useLlmJudge === "true") {
+    config.useLlmJudge = true;
+  }
 
   const run = await createEvaluationRun(resolved.workspaceId, datasetId, config);
   if (!run) {

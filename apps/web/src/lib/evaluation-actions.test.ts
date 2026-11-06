@@ -280,6 +280,8 @@ describe("triggerEvaluationRunAction", () => {
           promptVersion: "v2",
           retrievalMode: "hybrid",
           queryRewrite: "true",
+          reranker: "heuristic",
+          useLlmJudge: "on",
         }),
       ),
     ).rejects.toBeInstanceOf(RedirectSignal);
@@ -291,6 +293,8 @@ describe("triggerEvaluationRunAction", () => {
       promptVersion: "v2",
       retrievalMode: "hybrid",
       queryRewrite: true,
+      reranker: "heuristic",
+      useLlmJudge: true,
     });
     expect(redirectMock).toHaveBeenCalledWith(
       `/${SLUG}/evaluations/${DATASET_ID}/runs/${RUN_ID}`,
