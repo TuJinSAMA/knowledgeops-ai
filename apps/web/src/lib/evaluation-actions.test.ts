@@ -274,7 +274,13 @@ describe("triggerEvaluationRunAction", () => {
         SLUG,
         DATASET_ID,
         {},
-        formDataOf({ topK: "8", chunkSize: "500", promptVersion: "v2" }),
+        formDataOf({
+          topK: "8",
+          chunkSize: "500",
+          promptVersion: "v2",
+          retrievalMode: "hybrid",
+          queryRewrite: "true",
+        }),
       ),
     ).rejects.toBeInstanceOf(RedirectSignal);
 
@@ -283,6 +289,8 @@ describe("triggerEvaluationRunAction", () => {
       topK: 8,
       chunkSize: 500,
       promptVersion: "v2",
+      retrievalMode: "hybrid",
+      queryRewrite: true,
     });
     expect(redirectMock).toHaveBeenCalledWith(
       `/${SLUG}/evaluations/${DATASET_ID}/runs/${RUN_ID}`,

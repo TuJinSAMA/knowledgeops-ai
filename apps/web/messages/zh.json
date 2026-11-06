@@ -185,6 +185,14 @@
     "runDescription": "使用 RAG 配置运行此数据集。运行将进入评估 worker 队列，该 worker 会评估每个用例并报告逐用例和汇总指标。",
     "chunkSize": "分块大小",
     "topK": "Top-k",
+    "retrievalMode": "检索模式",
+    "retrievalModeHybrid": "混合检索（向量 + 关键词 RRF）",
+    "retrievalModeVector": "仅稠密向量检索",
+    "retrievalModeKeyword": "仅关键词字面检索",
+    "queryRewrite": "查询改写（Query Rewrite）",
+    "queryRewriteDefault": "默认（多轮对话自动开启）",
+    "queryRewriteEnabled": "强制开启",
+    "queryRewriteDisabled": "关闭",
     "embeddingModel": "嵌入模型",
     "reranker": "重排序器",
     "promptVersion": "Prompt 版本",
@@ -266,11 +274,11 @@
   "traces": {
     "title": "回答追踪", "description": "每个回答都会记录追踪：检索命中、发送给模型的上下文、Token 用量、预估成本、延迟和错误。",
     "none": "暂未生成追踪。向助手提问即可生成一条。", "query": "查询", "model": "模型", "latency": "延迟", "cost": "成本", "when": "时间",
-    "empty": "（空）", "error": "错误", "back": "← 全部追踪", "detail": "回答追踪", "question": "问题",
+    "empty": "（空）", "error": "错误", "back": "← 全部追踪", "detail": "回答追踪", "question": "问题", "rewrittenQuery": "改写后检索词",
     "totalTokens": "总 Token 数", "estimatedCost": "预估成本", "promptTokens": "Prompt Token 数", "completionTokens": "完成 Token 数",
     "stageLatency": "{name} 延迟", "retrievedChunks": "已检索分块（{count}）",
     "noChunks": "没有分块通过相关性阈值——助手可能已拒绝回答。", "document": "【{index}】文档", "chunk": "分块 #{index}",
-    "score": "评分 {score}", "finalContext": "发送给模型的最终上下文", "noContext": "未构建上下文（拒答或错误）。", "response": "模型回答"
+    "score": "综合分 {score}", "vectorScore": "向量分 {score}", "keywordScore": "关键词分 {score}", "finalContext": "发送给模型的最终上下文", "noContext": "未构建上下文（拒答或错误）。", "response": "模型回答"
   },
   "usage": {
     "title": "用量与配额", "description": "此工作区每日和每月上限下的 Token 消耗，以及所有回答的累计成本。",

@@ -73,6 +73,17 @@ export default async function TraceDetailPage({
         </p>
       </section>
 
+      {trace.rewrittenQuery && trace.rewrittenQuery !== trace.query && (
+        <section className="mt-4">
+          <h2 className="text-sm font-medium text-neutral-500">
+            {t("rewrittenQuery")}
+          </h2>
+          <p className="mt-2 whitespace-pre-wrap rounded-lg border border-blue-200 bg-blue-50/50 p-4 text-sm text-blue-950 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-200">
+            {trace.rewrittenQuery}
+          </p>
+        </section>
+      )}
+
       <section className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label={t("model")} value={trace.model ?? "—"} />
         <Stat
@@ -138,11 +149,23 @@ export default async function TraceDetailPage({
                       </span>
                     )}
                   </span>
-                  {typeof c.score === "number" && (
-                    <span className="text-neutral-400">
-                      {t("score", { score: c.score.toFixed(4) })}
-                    </span>
-                  )}
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                    {typeof c.vectorScore === "number" && (
+                      <span>
+                        {t("vectorScore", { score: c.vectorScore.toFixed(4) })}
+                      </span>
+                    )}
+                    {typeof c.keywordScore === "number" && (
+                      <span>
+                        {t("keywordScore", { score: c.keywordScore.toFixed(4) })}
+                      </span>
+                    )}
+                    {typeof c.score === "number" && (
+                      <span className="font-medium text-neutral-600 dark:text-neutral-300">
+                        {t("score", { score: c.score.toFixed(4) })}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {c.snippet && (
                   <p className="mt-2 whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">

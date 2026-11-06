@@ -5,6 +5,7 @@ import {
   type EnrichedCitation,
   getConversation,
   getDocumentTitles,
+  listMessages,
 } from "@/lib/conversation";
 import { getKnowledgeBase } from "@/lib/knowledge-base";
 import { estimateCost } from "@/lib/pricing";
@@ -38,6 +39,8 @@ type AiRetrievedChunk = {
   content: string;
   token_count: number | null;
   score: number;
+  vector_score?: number | null;
+  keyword_score?: number | null;
 };
 
 type AiDonePayload = {
@@ -46,7 +49,10 @@ type AiDonePayload = {
   usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number } | null;
   refused?: boolean;
   model?: string;
+  rewritten_query?: string | null;
   trace?: {
+    rewritten_query?: string | null;
+    retrieval_config?: Record<string, unknown> | null;
     retrieved_chunks?: AiRetrievedChunk[];
     final_context?: string;
     model?: string;
@@ -141,6 +147,7 @@ export async function handleChat(
   // source of truth for its knowledge base; a new one needs an explicit kb.
   let conversationId: string;
   let knowledgeBaseId: string;
+  let history: Array<{ role: string; content: string }> = [];
 
   if (body.conversationId) {
     const conversation = await getConversation(workspaceId, body.conversationId);
@@ -149,6 +156,11 @@ export async function handleChat(
     }
     conversationId = conversation.id;
     knowledgeBaseId = conversation.knowledgeBaseId;
+    const prior = await listMessages(conversationId);
+    history = prior.slice(-6).map((m) => ({
+      role: m.role.toLowerCase(),
+      content: m.content,
+    }));
   } else {
     if (!body.knowledgeBaseId) {
       return jsonError("Missing 'knowledgeBaseId'", 400);
@@ -191,6 +203,7 @@ export async function handleChat(
         workspace_id: workspaceId,
         knowledge_base_id: knowledgeBaseId,
         query,
+        history,
         config: retrievalConfig,
         conversation_id: conversationId,
       }),
@@ -274,6 +287,8 @@ function buildProxyStream(
       documentId: c.document_id,
       chunkIndex: c.chunk_index,
       score: c.score,
+      vectorScore: c.vector_score ?? null,
+      keywordScore: c.keyword_score ?? null,
       snippet: (c.content ?? "").slice(0, SNIPPET_MAX),
     }));
   }
@@ -303,12 +318,15 @@ function buildProxyStream(
 
     const model = captured.model ?? captured.trace?.model ?? null;
     const cost = estimateCost(model, captured.usage);
+    const rewrittenQuery =
+      captured.rewritten_query ?? captured.trace?.rewritten_query ?? null;
     const trace = await createTrace({
       workspaceId: ctx.workspaceId,
       conversationId: ctx.conversationId,
       messageId: assistant.id,
       query: ctx.query,
-      retrievalConfig: ctx.retrievalConfig,
+      rewrittenQuery,
+      retrievalConfig: captured.trace?.retrieval_config ?? ctx.retrievalConfig,
       retrievedChunks: traceChunks(captured),
       finalContext: captured.trace?.final_context ?? null,
       model,

@@ -49,11 +49,13 @@ vi.mock("@/lib/trace", () => ({
 const createConversationMock = vi.fn();
 const getConversationMock = vi.fn();
 const addMessageMock = vi.fn();
+const listMessagesMock = vi.fn();
 const getDocumentTitlesMock = vi.fn();
 vi.mock("@/lib/conversation", () => ({
   createConversation: (...args: unknown[]) => createConversationMock(...args),
   getConversation: (...args: unknown[]) => getConversationMock(...args),
   addMessage: (...args: unknown[]) => addMessageMock(...args),
+  listMessages: (...args: unknown[]) => listMessagesMock(...args),
   getDocumentTitles: (...args: unknown[]) => getDocumentTitlesMock(...args),
 }));
 
@@ -103,6 +105,7 @@ beforeEach(() => {
   getKnowledgeBaseMock.mockResolvedValue({ id: KB_ID, name: "Docs" });
   createConversationMock.mockResolvedValue({ id: "conv-1" });
   addMessageMock.mockResolvedValue({ id: "msg-1" });
+  listMessagesMock.mockResolvedValue([]);
   getDocumentTitlesMock.mockResolvedValue(new Map([["doc-1", "Doc One"]]));
   createTraceMock.mockResolvedValue({ id: "trace-1" });
 });
@@ -271,22 +274,32 @@ describe("handleChat happy path streaming", () => {
     expect(res.status).toBe(502);
   });
 
-  it("reuses an existing conversation and its knowledge base", async () => {
+  it("reuses an existing conversation, forwards prior history, and persists rewrittenQuery", async () => {
     getConversationMock.mockResolvedValue({
       id: "conv-9",
       workspaceId: WORKSPACE_ID,
       knowledgeBaseId: "kb-reused",
     });
+    listMessagesMock.mockResolvedValue([
+      { id: "m-1", role: "USER", content: "Pro 套餐每月多少钱？" },
+      { id: "m-2", role: "ASSISTANT", content: "Pro 套餐每月 ¥899。" },
+    ]);
     vi.spyOn(globalThis, "fetch").mockResolvedValue(
-      new Response(sseBody("event: done\ndata: {\"answer\": \"x\"}\n\n"), {
-        status: 200,
-      }),
+      new Response(
+        sseBody(
+          'event: done\ndata: {"answer": "包含 5 个座席", "rewritten_query": "Pro 套餐包含几个座席？", "trace": {"rewritten_query": "Pro 套餐包含几个座席？"}}\n\n',
+        ),
+        {
+          status: 200,
+        },
+      ),
     );
 
     const res = await handleChat(SLUG, {
       conversationId: "conv-9",
-      query: "again",
+      query: "那它包含几个座席？",
     });
+    await readAll(res.body);
 
     expect(res.status).toBe(200);
     expect(getConversationMock).toHaveBeenCalledWith(WORKSPACE_ID, "conv-9");
@@ -299,6 +312,15 @@ describe("handleChat happy path streaming", () => {
     );
     expect(fetchBody.knowledge_base_id).toBe("kb-reused");
     expect(fetchBody.conversation_id).toBe("conv-9");
+    expect(fetchBody.history).toEqual([
+      { role: "user", content: "Pro 套餐每月多少钱？" },
+      { role: "assistant", content: "Pro 套餐每月 ¥899。" },
+    ]);
+    expect(createTraceMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        rewrittenQuery: "Pro 套餐包含几个座席？",
+      }),
+    );
   });
 
   it("returns 404 when reusing a conversation from another workspace", async () => {

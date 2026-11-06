@@ -65,6 +65,36 @@ export function TriggerEvaluationRunForm({
           />
         </div>
         <div className="space-y-1.5">
+          <label htmlFor="run-mode" className="block text-sm font-medium">
+            {t("retrievalMode")}
+          </label>
+          <select
+            id="run-mode"
+            name="retrievalMode"
+            defaultValue="hybrid"
+            className={inputClass}
+          >
+            <option value="hybrid">{t("retrievalModeHybrid")}</option>
+            <option value="vector">{t("retrievalModeVector")}</option>
+            <option value="keyword">{t("retrievalModeKeyword")}</option>
+          </select>
+        </div>
+        <div className="space-y-1.5">
+          <label htmlFor="run-rewrite" className="block text-sm font-medium">
+            {t("queryRewrite")}
+          </label>
+          <select
+            id="run-rewrite"
+            name="queryRewrite"
+            defaultValue=""
+            className={inputClass}
+          >
+            <option value="">{t("queryRewriteDefault")}</option>
+            <option value="true">{t("queryRewriteEnabled")}</option>
+            <option value="false">{t("queryRewriteDisabled")}</option>
+          </select>
+        </div>
+        <div className="space-y-1.5">
           <label htmlFor="run-embed" className="block text-sm font-medium">
             {t("embeddingModel")}
           </label>

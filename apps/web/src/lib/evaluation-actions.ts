@@ -229,6 +229,20 @@ export async function triggerEvaluationRunAction(
   if (topK !== undefined) {
     config.topK = topK;
   }
+  const retrievalMode = String(formData.get("retrievalMode") ?? "").trim();
+  if (
+    retrievalMode === "hybrid" ||
+    retrievalMode === "vector" ||
+    retrievalMode === "keyword"
+  ) {
+    config.retrievalMode = retrievalMode;
+  }
+  const queryRewrite = String(formData.get("queryRewrite") ?? "").trim();
+  if (queryRewrite === "true") {
+    config.queryRewrite = true;
+  } else if (queryRewrite === "false") {
+    config.queryRewrite = false;
+  }
   const embeddingModel = String(formData.get("embeddingModel") ?? "").trim();
   if (embeddingModel) {
     config.embeddingModel = embeddingModel;

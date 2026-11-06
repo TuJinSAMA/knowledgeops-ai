@@ -13,6 +13,8 @@ export type TraceRetrievedChunk = {
   documentId: string;
   chunkIndex: number | null;
   score: number | null;
+  vectorScore?: number | null;
+  keywordScore?: number | null;
   snippet: string;
 };
 

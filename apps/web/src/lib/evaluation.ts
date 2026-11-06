@@ -348,6 +348,8 @@ export type EvaluationRunConfig = {
   // sensible defaults when absent.
   chunkSize?: number;
   topK?: number;
+  retrievalMode?: "hybrid" | "vector" | "keyword";
+  queryRewrite?: boolean;
   embeddingModel?: string;
   reranker?: string;
   promptVersion?: string;
