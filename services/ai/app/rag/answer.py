@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
 from app.rag.llm import FakeLLM, LLMProvider, LLMUsage, get_llm_provider
+from app.rag.reranker import rerank_chunks
 from app.rag.retrieval import RetrievedChunk, retrieve
 
 REFUSAL_MESSAGE = (
@@ -140,6 +141,7 @@ def normalize_rag_config(config: dict[str, Any] | None) -> dict[str, Any]:
     )
     if isinstance(query_rewrite, str):
         query_rewrite = query_rewrite.strip().lower() in ("true", "1", "yes", "on")
+    reranker = str(raw.get("reranker") or "none").strip().lower()
 
     return {
         "top_k": top_k,
@@ -147,6 +149,7 @@ def normalize_rag_config(config: dict[str, Any] | None) -> dict[str, Any]:
         "min_score": min_score,
         "retrieval_mode": str(retrieval_mode).strip().lower(),
         "query_rewrite": bool(query_rewrite) if query_rewrite is not None else None,
+        "reranker": reranker,
     }
 
 
@@ -247,6 +250,7 @@ class _AnswerPlan:
     refused: bool
     retrieve_latency_ms: float
     rewrite_latency_ms: float | None = None
+    rerank_latency_ms: float | None = None
     rewritten_query: str | None = None
     retrieval_config: dict[str, Any] = field(default_factory=dict)
 
@@ -264,6 +268,7 @@ def _plan_answer(
 ) -> _AnswerPlan:
     norm = normalize_rag_config(config)
     top_k = norm["top_k"]
+    effective_top_k = top_k if top_k and top_k > 0 else settings.retrieval_top_k
     score_threshold = norm["score_threshold"]
     min_score = (
         norm["min_score"]
@@ -272,6 +277,8 @@ def _plan_answer(
     )
     retrieval_mode = norm["retrieval_mode"]
     query_rewrite_flag = norm["query_rewrite"]
+    reranker = norm["reranker"]
+    use_reranker = reranker not in ("", "none")
 
     should_rewrite = (
         query_rewrite_flag
@@ -292,24 +299,43 @@ def _plan_answer(
             effective_query = rewritten
             rewritten_query = rewritten
 
+    retrieve_k = max(effective_top_k * 3, 12) if use_reranker else effective_top_k
     started = time.perf_counter()
     retrieved = retrieve(
         session,
         workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query=effective_query,
-        top_k=top_k,
+        top_k=retrieve_k,
         score_threshold=score_threshold,
         retrieval_mode=retrieval_mode,
         settings=settings,
     )
     retrieve_latency_ms = (time.perf_counter() - started) * 1000
 
+    rerank_latency_ms: float | None = None
+    if use_reranker and retrieved:
+        rr_llm = (
+            provider or get_llm_provider(settings)
+            if reranker == "llm"
+            else None
+        )
+        rr_started = time.perf_counter()
+        retrieved = rerank_chunks(
+            effective_query,
+            retrieved,
+            reranker=reranker,
+            top_k=effective_top_k,
+            provider=rr_llm,
+        )
+        rerank_latency_ms = (time.perf_counter() - rr_started) * 1000
+
     recorded_config = {
-        "top_k": top_k if top_k and top_k > 0 else settings.retrieval_top_k,
+        "top_k": effective_top_k,
         "retrieval_mode": retrieval_mode,
         "min_score": min_score,
         "query_rewrite": bool(should_rewrite),
+        "reranker": reranker,
     }
 
     # Refuse when nothing was retrieved or the best hit is below the bar.
@@ -322,6 +348,7 @@ def _plan_answer(
             refused=True,
             retrieve_latency_ms=retrieve_latency_ms,
             rewrite_latency_ms=rewrite_latency_ms,
+            rerank_latency_ms=rerank_latency_ms,
             rewritten_query=rewritten_query,
             retrieval_config=recorded_config,
         )
@@ -335,6 +362,7 @@ def _plan_answer(
         refused=False,
         retrieve_latency_ms=retrieve_latency_ms,
         rewrite_latency_ms=rewrite_latency_ms,
+        rerank_latency_ms=rerank_latency_ms,
         rewritten_query=rewritten_query,
         retrieval_config=recorded_config,
     )
@@ -368,6 +396,8 @@ def generate_answer(
     if plan.rewrite_latency_ms is not None:
         stage_latencies["rewrite"] = plan.rewrite_latency_ms
     stage_latencies["retrieve"] = plan.retrieve_latency_ms
+    if plan.rerank_latency_ms is not None:
+        stage_latencies["rerank"] = plan.rerank_latency_ms
 
     if plan.refused:
         refusal_msg = get_refusal_message(query)
@@ -439,6 +469,8 @@ def stream_answer_events(
     if plan.rewrite_latency_ms is not None:
         stage_latencies["rewrite"] = plan.rewrite_latency_ms
     stage_latencies["retrieve"] = plan.retrieve_latency_ms
+    if plan.rerank_latency_ms is not None:
+        stage_latencies["rerank"] = plan.rerank_latency_ms
 
     if plan.refused:
         refusal_msg = get_refusal_message(query)

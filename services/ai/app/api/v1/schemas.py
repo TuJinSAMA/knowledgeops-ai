@@ -24,6 +24,7 @@ class RetrievedChunkModel(BaseModel):
     score: float
     vector_score: float | None = None
     keyword_score: float | None = None
+    rerank_score: float | None = None
 
 
 class RetrieveResponse(BaseModel):
