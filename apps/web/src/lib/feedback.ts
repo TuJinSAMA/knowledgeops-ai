@@ -4,6 +4,8 @@ import { db } from "@/db";
 import {
   answerFeedback,
   conversations,
+  evaluationCases,
+  evaluationDatasets,
   knowledgeBases,
   messages,
   ragTraces,
@@ -162,6 +164,7 @@ export type FeedbackListItem = {
   question: string | null;
   conversationTitle: string | null;
   traceId: string | null;
+  promotedCaseId: string | null;
   createdAt: Date;
 };
 
@@ -197,6 +200,7 @@ export async function listFeedback(
       question: sql<string | null>`coalesce(${ragTraces.query}, ${conversations.title})`,
       conversationTitle: conversations.title,
       traceId: answerFeedback.traceId,
+      promotedCaseId: answerFeedback.promotedCaseId,
       createdAt: answerFeedback.createdAt,
     })
     .from(answerFeedback)
@@ -226,6 +230,9 @@ export type FeedbackDetail = {
   knowledgeBaseName: string;
   question: string | null;
   conversationTitle: string | null;
+  promotedCaseId: string | null;
+  promotedDatasetId: string | null;
+  promotedDatasetName: string | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -253,6 +260,9 @@ export async function getFeedback(
       knowledgeBaseName: knowledgeBases.name,
       question: sql<string | null>`coalesce(${ragTraces.query}, ${conversations.title})`,
       conversationTitle: conversations.title,
+      promotedCaseId: answerFeedback.promotedCaseId,
+      promotedDatasetId: evaluationDatasets.id,
+      promotedDatasetName: evaluationDatasets.name,
       createdAt: answerFeedback.createdAt,
       updatedAt: answerFeedback.updatedAt,
     })
@@ -264,6 +274,14 @@ export async function getFeedback(
       eq(conversations.knowledgeBaseId, knowledgeBases.id),
     )
     .leftJoin(ragTraces, eq(answerFeedback.traceId, ragTraces.id))
+    .leftJoin(
+      evaluationCases,
+      eq(answerFeedback.promotedCaseId, evaluationCases.id),
+    )
+    .leftJoin(
+      evaluationDatasets,
+      eq(evaluationCases.datasetId, evaluationDatasets.id),
+    )
     .where(
       and(
         eq(answerFeedback.id, feedbackId),
@@ -329,4 +347,152 @@ export async function updateFeedbackReview(
     )
     .returning({ id: answerFeedback.id });
   return updated.length > 0;
+}
+
+export type PromoteFeedbackToCaseParams = {
+  datasetId?: string | null;
+  newDatasetName?: string | null;
+  question: string;
+  expectedAnswer?: string | null;
+  expectedSourceDocuments?: string[] | null;
+  requiredFacts?: string[] | null;
+  tags?: string[] | null;
+  markResolved?: boolean;
+};
+
+export type PromoteFeedbackToCaseResult =
+  | { ok: true; caseId: string; datasetId: string; datasetName: string }
+  | {
+      ok: false;
+      reason:
+        | "FEEDBACK_NOT_FOUND"
+        | "FEEDBACK_ALREADY_PROMOTED"
+        | "DATASET_NOT_FOUND"
+        | "DATASET_NAME_REQUIRED"
+        | "EVALUATION_CASE_QUESTION_REQUIRED";
+    };
+
+/**
+ * Promote a feedback item into an evaluation case inside an existing or newly
+ * created dataset in the same workspace. Runs atomically inside a transaction
+ * and links `answer_feedback.promoted_case_id` to the created case.
+ */
+export async function promoteFeedbackToCase(
+  workspaceId: string,
+  feedbackId: string,
+  params: PromoteFeedbackToCaseParams,
+): Promise<PromoteFeedbackToCaseResult> {
+  const question = params.question?.trim() ?? "";
+  if (!question) {
+    return { ok: false, reason: "EVALUATION_CASE_QUESTION_REQUIRED" };
+  }
+
+  return db.transaction(async (tx) => {
+    const [fb] = await tx
+      .select({
+        id: answerFeedback.id,
+        knowledgeBaseId: conversations.knowledgeBaseId,
+        promotedCaseId: answerFeedback.promotedCaseId,
+      })
+      .from(answerFeedback)
+      .innerJoin(messages, eq(answerFeedback.messageId, messages.id))
+      .innerJoin(conversations, eq(messages.conversationId, conversations.id))
+      .where(
+        and(
+          eq(answerFeedback.id, feedbackId),
+          eq(answerFeedback.workspaceId, workspaceId),
+        ),
+      )
+      .limit(1);
+
+    if (!fb) {
+      return { ok: false, reason: "FEEDBACK_NOT_FOUND" };
+    }
+    if (fb.promotedCaseId) {
+      return { ok: false, reason: "FEEDBACK_ALREADY_PROMOTED" };
+    }
+
+    let targetDatasetId: string;
+    let targetDatasetName: string;
+
+    if (params.datasetId && params.datasetId !== "__new__") {
+      const [ds] = await tx
+        .select({
+          id: evaluationDatasets.id,
+          name: evaluationDatasets.name,
+        })
+        .from(evaluationDatasets)
+        .where(
+          and(
+            eq(evaluationDatasets.id, params.datasetId),
+            eq(evaluationDatasets.workspaceId, workspaceId),
+          ),
+        )
+        .limit(1);
+
+      if (!ds) {
+        return { ok: false, reason: "DATASET_NOT_FOUND" };
+      }
+      targetDatasetId = ds.id;
+      targetDatasetName = ds.name;
+    } else {
+      const newName = params.newDatasetName?.trim() ?? "";
+      if (!newName) {
+        return { ok: false, reason: "DATASET_NAME_REQUIRED" };
+      }
+      const [createdDs] = await tx
+        .insert(evaluationDatasets)
+        .values({
+          workspaceId,
+          knowledgeBaseId: fb.knowledgeBaseId,
+          name: newName,
+          description: null,
+        })
+        .returning({
+          id: evaluationDatasets.id,
+          name: evaluationDatasets.name,
+        });
+      targetDatasetId = createdDs.id;
+      targetDatasetName = createdDs.name;
+    }
+
+    const [createdCase] = await tx
+      .insert(evaluationCases)
+      .values({
+        datasetId: targetDatasetId,
+        question,
+        expectedAnswer: params.expectedAnswer?.trim() || null,
+        expectedSourceDocuments: params.expectedSourceDocuments ?? null,
+        expectedChunks: null,
+        requiredFacts: params.requiredFacts ?? null,
+        tags: params.tags ?? null,
+      })
+      .returning({ id: evaluationCases.id });
+
+    await tx
+      .update(evaluationDatasets)
+      .set({ updatedAt: new Date() })
+      .where(eq(evaluationDatasets.id, targetDatasetId));
+
+    await tx
+      .update(answerFeedback)
+      .set({
+        promotedCaseId: createdCase.id,
+        ...(params.markResolved ? { reviewStatus: "RESOLVED" as const } : {}),
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(answerFeedback.id, feedbackId),
+          eq(answerFeedback.workspaceId, workspaceId),
+        ),
+      );
+
+    return {
+      ok: true,
+      caseId: createdCase.id,
+      datasetId: targetDatasetId,
+      datasetName: targetDatasetName,
+    };
+  });
 }

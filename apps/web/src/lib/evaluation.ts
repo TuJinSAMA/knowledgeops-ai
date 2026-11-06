@@ -2,6 +2,7 @@ import { and, desc, eq, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
+  answerFeedback,
   evaluationCases,
   evaluationDatasets,
   evaluationResults,
@@ -221,6 +222,7 @@ export type EvaluationCaseRecord = {
   expectedChunks: string[] | null;
   requiredFacts: string[] | null;
   tags: string[] | null;
+  sourceFeedbackId?: string | null;
   createdAt: Date;
 };
 
@@ -236,11 +238,31 @@ export async function listEvaluationCases(
   if (!dataset) {
     return [];
   }
-  return db
-    .select()
+  const rows = await db
+    .select({
+      id: evaluationCases.id,
+      datasetId: evaluationCases.datasetId,
+      question: evaluationCases.question,
+      expectedAnswer: evaluationCases.expectedAnswer,
+      expectedSourceDocuments: evaluationCases.expectedSourceDocuments,
+      expectedChunks: evaluationCases.expectedChunks,
+      requiredFacts: evaluationCases.requiredFacts,
+      tags: evaluationCases.tags,
+      sourceFeedbackId: answerFeedback.id,
+      createdAt: evaluationCases.createdAt,
+    })
     .from(evaluationCases)
+    .leftJoin(
+      answerFeedback,
+      eq(answerFeedback.promotedCaseId, evaluationCases.id),
+    )
     .where(eq(evaluationCases.datasetId, datasetId))
     .orderBy(evaluationCases.createdAt);
+
+  return rows.map((row) => ({
+    ...row,
+    sourceFeedbackId: row.sourceFeedbackId ?? null,
+  }));
 }
 
 export type CreateEvaluationCaseParams = {
