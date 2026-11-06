@@ -22,6 +22,8 @@ class RetrievedChunkModel(BaseModel):
     content: str
     token_count: int | None
     score: float
+    vector_score: float | None = None
+    keyword_score: float | None = None
 
 
 class RetrieveResponse(BaseModel):

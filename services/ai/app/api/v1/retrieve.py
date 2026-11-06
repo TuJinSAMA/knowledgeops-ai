@@ -20,7 +20,14 @@ router = APIRouter(prefix="/v1", tags=["retrieval"])
 )
 def retrieve_endpoint(body: RetrieveRequest) -> RetrieveResponse:
     settings = get_settings()
-    score_threshold = body.config.get("score_threshold")
+    score_threshold = body.config.get("score_threshold") or body.config.get(
+        "scoreThreshold"
+    )
+    retrieval_mode = (
+        body.config.get("retrieval_mode")
+        or body.config.get("retrievalMode")
+        or "hybrid"
+    )
     with session_scope() as session:
         chunks = retrieve(
             session,
@@ -29,6 +36,7 @@ def retrieve_endpoint(body: RetrieveRequest) -> RetrieveResponse:
             query=body.query,
             top_k=body.top_k,
             score_threshold=score_threshold,
+            retrieval_mode=retrieval_mode,
             settings=settings,
         )
     return RetrieveResponse(

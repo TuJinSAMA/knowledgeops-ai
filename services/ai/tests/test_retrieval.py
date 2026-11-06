@@ -9,7 +9,12 @@ from __future__ import annotations
 import pytest
 
 from app.db import session_scope
-from app.rag.retrieval import retrieve
+from app.rag.retrieval import (
+    RetrievedChunk,
+    compute_keyword_score,
+    fuse_hybrid_results,
+    retrieve,
+)
 from tests.conftest import first_chunk_content
 
 pytestmark = pytest.mark.usefixtures("require_db")
@@ -110,3 +115,53 @@ def test_score_threshold_filters(ingested_kb_factory):
             score_threshold=0.5,
         )
     assert results == []
+
+
+def test_compute_keyword_score_matches_exact_terms_and_cjk():
+    score = compute_keyword_score(
+        "billing@nimbusdesk.example 退款",
+        "请发送邮件至 billing@nimbusdesk.example 申请全额退款。",
+    )
+    assert score > 0.7
+    assert compute_keyword_score("年假制度", "Pro 套餐每月 899 元") == 0.0
+
+
+def test_fuse_hybrid_results_boosts_dual_hit_and_preserves_score_range():
+    v_hits = [
+        RetrievedChunk("c1", "d1", 0, "vec first", 10, 0.80, vector_score=0.80),
+        RetrievedChunk("c2", "d1", 1, "both hit", 10, 0.78, vector_score=0.78),
+    ]
+    k_hits = [
+        RetrievedChunk("c2", "d1", 1, "both hit", 10, 1.0, keyword_score=1.0),
+    ]
+    fused = fuse_hybrid_results(v_hits, k_hits, top_k=2)
+    assert fused[0].chunk_id == "c2"
+    assert fused[0].vector_score == 0.78
+    assert fused[0].keyword_score == 1.0
+    assert 0.0 <= fused[0].score <= 1.0
+
+
+def test_retrieve_supports_keyword_and_hybrid_modes(ingested_kb_factory):
+    kb = ingested_kb_factory(
+        "Pro 套餐月费 ¥899，联系 billing@nimbusdesk.example 办理退订。",
+        slug_hint="hyb",
+    )
+    with session_scope() as session:
+        kw_hits = retrieve(
+            session,
+            workspace_id=kb["workspace_id"],
+            knowledge_base_id=kb["knowledge_base_id"],
+            query="billing@nimbusdesk.example",
+            retrieval_mode="keyword",
+            top_k=3,
+        )
+        hyb_hits = retrieve(
+            session,
+            workspace_id=kb["workspace_id"],
+            knowledge_base_id=kb["knowledge_base_id"],
+            query="billing@nimbusdesk.example",
+            retrieval_mode="hybrid",
+            top_k=3,
+        )
+    assert kw_hits and kw_hits[0].keyword_score is not None and kw_hits[0].keyword_score > 0
+    assert hyb_hits and hyb_hits[0].vector_score is not None
