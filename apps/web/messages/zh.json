@@ -153,6 +153,7 @@
     "expectedDocuments": "{count, plural, =1 {# 个预期文档} other {# 个预期文档}}",
     "expectedChunks": "{count, plural, =1 {# 个预期分块} other {# 个预期分块}}",
     "requiredFacts": "{count, plural, =1 {# 个必需事实} other {# 个必需事实}}",
+    "fromFeedback": "来自反馈 →",
     "addCase": "添加用例",
     "runs": "运行",
     "compareRuns": "比较运行 →",
@@ -227,6 +228,25 @@
     "adminOnly": "仅工作区管理员可以更新审核状态。", "failureReason": "失败原因", "failureReasonClassification": "失败原因（分类）",
     "failureReasonPlaceholder": "例如：缺少来源文档、检索未命中、排序不佳、Prompt 问题、幻觉…",
     "saving": "正在保存…", "saveReview": "保存审核", "saved": "已保存",
+    "promotedBadge": "已转用例",
+    "promoteTitle": "沉淀为回归评测用例",
+    "promoteDescription": "将该条用户反馈转化为长期的回归评测用例，确保后续检索或 Prompt 变更不会再次退化。",
+    "promotedCardTitle": "已沉淀至回归评测集",
+    "promotedToDataset": "该反馈已作为回归用例加入评测集“{dataset}”。",
+    "openDataset": "查看评测集与用例 →",
+    "targetDataset": "目标评估数据集",
+    "createNewDatasetOption": "+ 为当前知识库新建评估数据集…",
+    "newDatasetName": "新数据集名称",
+    "newDatasetNamePlaceholder": "客服高频问题回归集",
+    "questionLabel": "问题",
+    "expectedAnswerLabel": "预期回答（可选）",
+    "expectedAnswerPlaceholder": "填写经人工确认的标准答案…",
+    "requiredFactsLabel": "必需事实（每行一条，可选）",
+    "expectedDocsLabel": "预期来源文档 ID（每行一个，可选）",
+    "tagsLabel": "标签（逗号分隔，可选）",
+    "markResolvedLabel": "同时将该条反馈标记为“已解决”",
+    "promoteButton": "沉淀为回归评测用例",
+    "promoting": "正在转化…",
     "ratingLabels": { "HELPFUL": "有帮助", "NOT_HELPFUL": "没有帮助" },
     "reportLabels": { "WRONG_ANSWER": "回答错误", "MISSING_KNOWLEDGE": "知识缺失", "OTHER": "其他" },
     "statusLabels": { "NEW": "新建", "PENDING_REVIEW": "等待审核", "RESOLVED": "已解决" }
@@ -281,6 +301,9 @@
       },
       "evaluation-run": {
         "trigger": "已触发评估运行"
+      },
+      "feedback": {
+        "promote-case": "已将反馈沉淀为评估用例"
       }
     }
   },
@@ -311,6 +334,7 @@
     "FEEDBACK_ANSWER_NOT_FOUND": "未找到回答。",
     "FEEDBACK_REVIEW_STATUS_INVALID": "审核状态无效。",
     "FEEDBACK_NOT_FOUND": "未找到反馈。",
+    "FEEDBACK_ALREADY_PROMOTED": "该反馈已转化为评估用例，无需重复添加。",
     "UPLOAD_FILE_MISSING": "请选择要上传的文件。",
     "UPLOAD_UNSUPPORTED_TYPE": "不支持的文件类型。仅支持 Markdown (.md)、纯文本 (.txt) 或 PDF (.pdf)。",
     "UPLOAD_FILE_EMPTY": "文件内容为空。",

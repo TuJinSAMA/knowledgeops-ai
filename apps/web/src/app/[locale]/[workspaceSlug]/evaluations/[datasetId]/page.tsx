@@ -122,14 +122,22 @@ export default async function EvaluationDatasetPage({
                           {t("requiredFacts", { count: c.requiredFacts.length })}
                         </span>
                       ) : null}
-                      {c.tags?.map((t) => (
+                      {c.tags?.map((tag) => (
                         <span
-                          key={t}
+                          key={tag}
                           className="rounded bg-blue-100 px-1.5 py-0.5 text-blue-800 dark:bg-blue-950 dark:text-blue-300"
                         >
-                          {t}
+                          {tag}
                         </span>
                       ))}
+                      {c.sourceFeedbackId && (
+                        <Link
+                          href={`/${workspaceSlug}/feedback/${c.sourceFeedbackId}`}
+                          className="rounded bg-emerald-100 px-1.5 py-0.5 font-medium text-emerald-800 underline-offset-4 hover:underline dark:bg-emerald-950 dark:text-emerald-300"
+                        >
+                          {t("fromFeedback")}
+                        </Link>
+                      )}
                     </div>
                   </div>
                   {canManage && (

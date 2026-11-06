@@ -183,11 +183,18 @@ export default async function FeedbackPage({
                     {f.reportType ? t(`reportLabels.${f.reportType}`) : "—"}
                   </td>
                   <td className="px-4 py-3">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(f.reviewStatus)}`}
-                    >
-                      {t(`statusLabels.${f.reviewStatus}`)}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(f.reviewStatus)}`}
+                      >
+                        {t(`statusLabels.${f.reviewStatus}`)}
+                      </span>
+                      {f.promotedCaseId && (
+                        <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                          {t("promotedBadge")}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-neutral-500">
                     {formatDate(f.createdAt)}

@@ -3,7 +3,9 @@ import { getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 
 import { FeedbackReviewForm } from "@/components/feedback/FeedbackReviewForm";
+import { PromoteFeedbackToCaseForm } from "@/components/feedback/PromoteFeedbackToCaseForm";
 import { hasMinRole } from "@/lib/authz";
+import { listEvaluationDatasets } from "@/lib/evaluation";
 import { getFeedback } from "@/lib/feedback";
 import { requireUser } from "@/lib/session";
 import { getUserWorkspaceBySlug } from "@/lib/workspace";
@@ -42,6 +44,11 @@ export default async function FeedbackDetailPage({
   }
 
   const canReview = hasMinRole(workspace.role, "ADMIN");
+  const datasets = canReview
+    ? await listEvaluationDatasets(workspace.id)
+    : [];
+  const resolvedQuestion =
+    feedback.question || feedback.conversationTitle || "";
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
@@ -140,6 +147,49 @@ export default async function FeedbackDetailPage({
           </div>
         )}
       </section>
+
+      {canReview && (
+        <section className="mt-10">
+          <h2 className="text-lg font-medium">{t("promoteTitle")}</h2>
+          <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
+            {t("promoteDescription")}
+          </p>
+          <div className="mt-3 max-w-lg">
+            {feedback.promotedCaseId && feedback.promotedDatasetId ? (
+              <div className="rounded-lg border border-emerald-300 bg-emerald-50/60 p-4 text-sm dark:border-emerald-900 dark:bg-emerald-950/30">
+                <div className="font-medium text-emerald-900 dark:text-emerald-200">
+                  {t("promotedCardTitle")}
+                </div>
+                <p className="mt-1 text-emerald-800 dark:text-emerald-300">
+                  {t("promotedToDataset", {
+                    dataset: feedback.promotedDatasetName ?? "",
+                  })}
+                </p>
+                <Link
+                  href={`/${workspaceSlug}/evaluations/${feedback.promotedDatasetId}`}
+                  className="mt-2 inline-block font-medium text-emerald-900 underline underline-offset-4 dark:text-emerald-200"
+                >
+                  {t("openDataset")}
+                </Link>
+              </div>
+            ) : (
+              <PromoteFeedbackToCaseForm
+                workspaceSlug={workspaceSlug}
+                feedbackId={feedback.id}
+                knowledgeBaseId={feedback.knowledgeBaseId}
+                knowledgeBaseName={feedback.knowledgeBaseName}
+                initialQuestion={resolvedQuestion}
+                reportType={feedback.reportType}
+                datasets={datasets.map((ds) => ({
+                  id: ds.id,
+                  name: ds.name,
+                  knowledgeBaseId: ds.knowledgeBaseId,
+                }))}
+              />
+            )}
+          </div>
+        </section>
+      )}
     </main>
   );
 }

@@ -153,6 +153,7 @@
     "expectedDocuments": "{count, plural, =1 {# expected document} other {# expected documents}}",
     "expectedChunks": "{count, plural, =1 {# expected chunk} other {# expected chunks}}",
     "requiredFacts": "{count, plural, =1 {# required fact} other {# required facts}}",
+    "fromFeedback": "From feedback →",
     "addCase": "Add a case",
     "runs": "Runs",
     "compareRuns": "Compare runs →",
@@ -247,6 +248,25 @@
     "saving": "Saving…",
     "saveReview": "Save review",
     "saved": "Saved",
+    "promotedBadge": "In regression set",
+    "promoteTitle": "Promote to evaluation case",
+    "promoteDescription": "Turn this user feedback into a permanent regression test case so future RAG changes are evaluated against it.",
+    "promotedCardTitle": "Promoted to evaluation dataset",
+    "promotedToDataset": "This feedback has been added as a regression case in \"{dataset}\".",
+    "openDataset": "Open evaluation dataset →",
+    "targetDataset": "Target evaluation dataset",
+    "createNewDatasetOption": "+ Create a new dataset for this knowledge base…",
+    "newDatasetName": "New dataset name",
+    "newDatasetNamePlaceholder": "Customer support regression set",
+    "questionLabel": "Question",
+    "expectedAnswerLabel": "Expected answer (optional)",
+    "expectedAnswerPlaceholder": "Write the verified ground-truth answer expected from the assistant…",
+    "requiredFactsLabel": "Required facts (one per line, optional)",
+    "expectedDocsLabel": "Expected source document IDs (one per line, optional)",
+    "tagsLabel": "Tags (comma separated, optional)",
+    "markResolvedLabel": "Also mark this feedback item as Resolved",
+    "promoteButton": "Promote to evaluation case",
+    "promoting": "Promoting…",
     "ratingLabels": { "HELPFUL": "Helpful", "NOT_HELPFUL": "Not helpful" },
     "reportLabels": { "WRONG_ANSWER": "Wrong answer", "MISSING_KNOWLEDGE": "Missing knowledge", "OTHER": "Other" },
     "statusLabels": { "NEW": "New", "PENDING_REVIEW": "Pending review", "RESOLVED": "Resolved" }
@@ -339,6 +359,9 @@
       },
       "evaluation-run": {
         "trigger": "Triggered evaluation run"
+      },
+      "feedback": {
+        "promote-case": "Promoted feedback to evaluation case"
       }
     }
   },
@@ -376,6 +399,7 @@
     "FEEDBACK_ANSWER_NOT_FOUND": "Answer not found.",
     "FEEDBACK_REVIEW_STATUS_INVALID": "Review status is invalid.",
     "FEEDBACK_NOT_FOUND": "Feedback not found.",
+    "FEEDBACK_ALREADY_PROMOTED": "This feedback has already been promoted to an evaluation case.",
     "UPLOAD_FILE_MISSING": "Please choose a file to upload.",
     "UPLOAD_UNSUPPORTED_TYPE": "Unsupported file type. Allowed: Markdown (.md), plain text (.txt), or PDF (.pdf).",
     "UPLOAD_FILE_EMPTY": "File is empty.",
