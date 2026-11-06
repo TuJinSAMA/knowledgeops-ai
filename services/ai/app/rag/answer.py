@@ -28,7 +28,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.config import Settings, get_settings
-from app.rag.llm import LLMProvider, LLMUsage, get_llm_provider
+from app.rag.llm import FakeLLM, LLMProvider, LLMUsage, get_llm_provider
 from app.rag.retrieval import RetrievedChunk, retrieve
 
 REFUSAL_MESSAGE = (
@@ -105,6 +105,105 @@ class Citation:
         }
 
 
+_REWRITE_SYSTEM_PROMPT = (
+    "You are a search query rewriter for an enterprise RAG system. Given the "
+    "recent conversation history (if any) and the user's latest question, "
+    "resolve any pronouns or references and produce a single standalone, "
+    "self-contained search query in the same language as the user's question. "
+    "Output ONLY the rewritten search query text, with no quotes or explanation."
+)
+
+
+def normalize_rag_config(config: dict[str, Any] | None) -> dict[str, Any]:
+    """Normalize camelCase and snake_case RAG configuration keys."""
+    raw = config or {}
+    top_k = raw.get("top_k") if raw.get("top_k") is not None else raw.get("topK")
+    score_threshold = (
+        raw.get("score_threshold")
+        if raw.get("score_threshold") is not None
+        else raw.get("scoreThreshold")
+    )
+    min_score = (
+        raw.get("min_score")
+        if raw.get("min_score") is not None
+        else raw.get("minScore")
+    )
+    retrieval_mode = (
+        raw.get("retrieval_mode")
+        or raw.get("retrievalMode")
+        or "hybrid"
+    )
+    query_rewrite = (
+        raw.get("query_rewrite")
+        if raw.get("query_rewrite") is not None
+        else raw.get("queryRewrite")
+    )
+    if isinstance(query_rewrite, str):
+        query_rewrite = query_rewrite.strip().lower() in ("true", "1", "yes", "on")
+
+    return {
+        "top_k": top_k,
+        "score_threshold": score_threshold,
+        "min_score": min_score,
+        "retrieval_mode": str(retrieval_mode).strip().lower(),
+        "query_rewrite": bool(query_rewrite) if query_rewrite is not None else None,
+    }
+
+
+def rewrite_query(
+    query: str,
+    history: list[dict[str, str]] | None,
+    provider: LLMProvider,
+    settings: Settings | None = None,
+) -> str:
+    """Rewrite ``query`` into a standalone retrieval query using conversation history."""
+    del settings
+    clean_query = (query or "").strip()
+    if not clean_query:
+        return ""
+
+    prior_users = [
+        m.get("content", "").strip()
+        for m in (history or [])
+        if isinstance(m, dict)
+        and str(m.get("role", "")).lower() == "user"
+        and m.get("content", "").strip()
+    ]
+
+    # Deterministic offline path for FakeLLM (or when no real LLM call is needed).
+    if isinstance(provider, FakeLLM):
+        if prior_users:
+            last_user = prior_users[-1]
+            if last_user not in clean_query:
+                return f"{last_user} {clean_query}"
+        return clean_query
+
+    history_lines = []
+    for m in (history or [])[-6:]:
+        if isinstance(m, dict) and m.get("content"):
+            role = str(m.get("role", "user")).upper()
+            history_lines.append(f"{role}: {m['content'].strip()}")
+    history_block = "\n".join(history_lines) if history_lines else "(none)"
+
+    messages = [
+        {"role": "system", "content": _REWRITE_SYSTEM_PROMPT},
+        {
+            "role": "user",
+            "content": (
+                f"Conversation history:\n{history_block}\n\n"
+                f"Latest question: {clean_query}\n\n"
+                "Standalone search query:"
+            ),
+        },
+    ]
+    try:
+        res = provider.complete(messages)
+        candidate = res.text.strip().strip('"').strip("'")
+        return candidate if candidate else clean_query
+    except Exception:  # noqa: BLE001 - fallback to raw query on rewrite failure
+        return clean_query
+
+
 @dataclass
 class AnswerResult:
     answer: str
@@ -115,6 +214,8 @@ class AnswerResult:
     retrieved: list[RetrievedChunk] = field(default_factory=list)
     final_context: str = ""
     stage_latency_ms: dict[str, float] = field(default_factory=dict)
+    rewritten_query: str | None = None
+    retrieval_config: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {
@@ -123,7 +224,10 @@ class AnswerResult:
             "usage": self.usage.to_dict() if self.usage else None,
             "refused": self.refused,
             "model": self.model,
+            "rewritten_query": self.rewritten_query,
             "trace": {
+                "rewritten_query": self.rewritten_query,
+                "retrieval_config": self.retrieval_config,
                 "retrieved_chunks": [c.to_dict() for c in self.retrieved],
                 "final_context": self.final_context,
                 "model": self.model,
@@ -142,6 +246,9 @@ class _AnswerPlan:
     messages: list[dict[str, str]]
     refused: bool
     retrieve_latency_ms: float
+    rewrite_latency_ms: float | None = None
+    rewritten_query: str | None = None
+    retrieval_config: dict[str, Any] = field(default_factory=dict)
 
 
 def _plan_answer(
@@ -150,25 +257,60 @@ def _plan_answer(
     workspace_id: str,
     knowledge_base_id: str,
     query: str,
+    history: list[dict[str, str]] | None = None,
     config: dict[str, Any] | None,
     settings: Settings,
+    provider: LLMProvider | None = None,
 ) -> _AnswerPlan:
-    config = config or {}
-    top_k = config.get("top_k")
-    score_threshold = config.get("score_threshold")
-    min_score = config.get("min_score", settings.answer_min_score)
+    norm = normalize_rag_config(config)
+    top_k = norm["top_k"]
+    score_threshold = norm["score_threshold"]
+    min_score = (
+        norm["min_score"]
+        if norm["min_score"] is not None
+        else settings.answer_min_score
+    )
+    retrieval_mode = norm["retrieval_mode"]
+    query_rewrite_flag = norm["query_rewrite"]
+
+    should_rewrite = (
+        query_rewrite_flag
+        if query_rewrite_flag is not None
+        else bool(history)
+    )
+
+    effective_query = query
+    rewritten_query: str | None = None
+    rewrite_latency_ms: float | None = None
+
+    if should_rewrite and query and query.strip():
+        llm = provider or get_llm_provider(settings)
+        rw_started = time.perf_counter()
+        rewritten = rewrite_query(query, history, llm, settings)
+        rewrite_latency_ms = (time.perf_counter() - rw_started) * 1000
+        if rewritten:
+            effective_query = rewritten
+            rewritten_query = rewritten
 
     started = time.perf_counter()
     retrieved = retrieve(
         session,
         workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
-        query=query,
+        query=effective_query,
         top_k=top_k,
         score_threshold=score_threshold,
+        retrieval_mode=retrieval_mode,
         settings=settings,
     )
     retrieve_latency_ms = (time.perf_counter() - started) * 1000
+
+    recorded_config = {
+        "top_k": top_k if top_k and top_k > 0 else settings.retrieval_top_k,
+        "retrieval_mode": retrieval_mode,
+        "min_score": min_score,
+        "query_rewrite": bool(should_rewrite),
+    }
 
     # Refuse when nothing was retrieved or the best hit is below the bar.
     relevant = [c for c in retrieved if c.score >= min_score]
@@ -179,6 +321,9 @@ def _plan_answer(
             messages=[],
             refused=True,
             retrieve_latency_ms=retrieve_latency_ms,
+            rewrite_latency_ms=rewrite_latency_ms,
+            rewritten_query=rewritten_query,
+            retrieval_config=recorded_config,
         )
 
     final_context = build_context(relevant)
@@ -189,6 +334,9 @@ def _plan_answer(
         messages=messages,
         refused=False,
         retrieve_latency_ms=retrieve_latency_ms,
+        rewrite_latency_ms=rewrite_latency_ms,
+        rewritten_query=rewritten_query,
+        retrieval_config=recorded_config,
     )
 
 
@@ -198,6 +346,7 @@ def generate_answer(
     workspace_id: str,
     knowledge_base_id: str,
     query: str,
+    history: list[dict[str, str]] | None = None,
     config: dict[str, Any] | None = None,
     settings: Settings | None = None,
     provider: LLMProvider | None = None,
@@ -209,12 +358,20 @@ def generate_answer(
         workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query=query,
+        history=history,
         config=config,
         settings=settings,
+        provider=provider,
     )
+
+    stage_latencies: dict[str, float] = {}
+    if plan.rewrite_latency_ms is not None:
+        stage_latencies["rewrite"] = plan.rewrite_latency_ms
+    stage_latencies["retrieve"] = plan.retrieve_latency_ms
 
     if plan.refused:
         refusal_msg = get_refusal_message(query)
+        stage_latencies["generate"] = 0.0
         return AnswerResult(
             answer=refusal_msg,
             citations=[],
@@ -223,13 +380,15 @@ def generate_answer(
             model=(provider.model if provider else _provider_model(settings)),
             retrieved=plan.retrieved,
             final_context="",
-            stage_latency_ms={"retrieve": plan.retrieve_latency_ms, "generate": 0.0},
+            stage_latency_ms=stage_latencies,
+            rewritten_query=plan.rewritten_query,
+            retrieval_config=plan.retrieval_config,
         )
 
     provider = provider or get_llm_provider(settings)
     started = time.perf_counter()
     result = provider.complete(plan.messages)
-    generate_latency_ms = (time.perf_counter() - started) * 1000
+    stage_latencies["generate"] = (time.perf_counter() - started) * 1000
 
     cleaned_answer, is_refused = detect_and_clean_refusal(result.text)
     citations = [] if is_refused else parse_citations(cleaned_answer, plan.retrieved)
@@ -241,10 +400,9 @@ def generate_answer(
         model=result.model,
         retrieved=plan.retrieved,
         final_context=plan.final_context,
-        stage_latency_ms={
-            "retrieve": plan.retrieve_latency_ms,
-            "generate": generate_latency_ms,
-        },
+        stage_latency_ms=stage_latencies,
+        rewritten_query=plan.rewritten_query,
+        retrieval_config=plan.retrieval_config,
     )
 
 
@@ -254,6 +412,7 @@ def stream_answer_events(
     workspace_id: str,
     knowledge_base_id: str,
     query: str,
+    history: list[dict[str, str]] | None = None,
     config: dict[str, Any] | None = None,
     settings: Settings | None = None,
     provider: LLMProvider | None = None,
@@ -270,12 +429,20 @@ def stream_answer_events(
         workspace_id=workspace_id,
         knowledge_base_id=knowledge_base_id,
         query=query,
+        history=history,
         config=config,
         settings=settings,
+        provider=provider,
     )
+
+    stage_latencies: dict[str, float] = {}
+    if plan.rewrite_latency_ms is not None:
+        stage_latencies["rewrite"] = plan.rewrite_latency_ms
+    stage_latencies["retrieve"] = plan.retrieve_latency_ms
 
     if plan.refused:
         refusal_msg = get_refusal_message(query)
+        stage_latencies["generate"] = 0.0
         yield ("token", {"text": refusal_msg})
         result = AnswerResult(
             answer=refusal_msg,
@@ -285,7 +452,9 @@ def stream_answer_events(
             model=_provider_model(settings),
             retrieved=plan.retrieved,
             final_context="",
-            stage_latency_ms={"retrieve": plan.retrieve_latency_ms, "generate": 0.0},
+            stage_latency_ms=stage_latencies,
+            rewritten_query=plan.rewritten_query,
+            retrieval_config=plan.retrieval_config,
         )
         yield ("done", result.to_dict())
         return
@@ -314,7 +483,7 @@ def stream_answer_events(
         if stripped:
             yield ("token", {"text": stripped})
 
-    generate_latency_ms = (time.perf_counter() - started) * 1000
+    stage_latencies["generate"] = (time.perf_counter() - started) * 1000
 
     raw_text = "".join(raw_parts)
     cleaned_text, is_refused = detect_and_clean_refusal(raw_text)
@@ -327,10 +496,9 @@ def stream_answer_events(
         model=provider.model,
         retrieved=plan.retrieved,
         final_context=plan.final_context,
-        stage_latency_ms={
-            "retrieve": plan.retrieve_latency_ms,
-            "generate": generate_latency_ms,
-        },
+        stage_latency_ms=stage_latencies,
+        rewritten_query=plan.rewritten_query,
+        retrieval_config=plan.retrieval_config,
     )
     yield ("done", result.to_dict())
 

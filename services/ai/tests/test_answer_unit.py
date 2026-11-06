@@ -11,7 +11,9 @@ from app.rag.answer import (
     detect_and_clean_refusal,
     generate_answer,
     get_refusal_message,
+    normalize_rag_config,
     parse_citations,
+    rewrite_query,
     stream_answer_events,
 )
 from app.rag.llm import FakeLLM, LLMResult, LLMUsage, get_llm_provider
@@ -157,3 +159,52 @@ def test_stream_and_generate_strip_refusal_sentinel_and_clear_citations(monkeypa
     assert "[REFUSED]" not in streamed_tokens
     assert done_payload["refused"] is True
     assert done_payload["citations"] == []
+
+
+def test_normalize_rag_config_accepts_camel_and_snake_case():
+    cfg = normalize_rag_config(
+        {"topK": 8, "retrievalMode": "keyword", "queryRewrite": True, "minScore": 0.35}
+    )
+    assert cfg["top_k"] == 8
+    assert cfg["retrieval_mode"] == "keyword"
+    assert cfg["query_rewrite"] is True
+    assert cfg["min_score"] == 0.35
+
+
+def test_rewrite_query_resolves_multi_turn_context_deterministically_in_fake_mode():
+    settings = get_settings()
+    llm = FakeLLM()
+    history = [
+        {"role": "user", "content": "Pro 套餐每月多少钱？"},
+        {"role": "assistant", "content": "Pro 套餐每月 ¥899 [1]。"},
+    ]
+    rewritten = rewrite_query("那它包含几个座席？", history, llm, settings)
+    assert "Pro" in rewritten or "套餐" in rewritten
+    assert "那它包含几个座席？" in rewritten
+
+
+def test_generate_answer_records_rewritten_query_and_forwards_retrieval_mode(monkeypatch):
+    from app.rag import answer as answer_mod
+
+    captured_call = {}
+
+    def fake_retrieve(session, **kwargs):
+        captured_call.update(kwargs)
+        return [_chunk("c1", "d1", 0, "Pro 套餐包含 5 个座席。")]
+
+    monkeypatch.setattr(answer_mod, "retrieve", fake_retrieve)
+
+    res = generate_answer(
+        None,
+        workspace_id="ws",
+        knowledge_base_id="kb",
+        query="那它包含几个座席？",
+        history=[{"role": "user", "content": "Pro 套餐每月多少钱？"}],
+        config={"topK": 4, "retrievalMode": "hybrid", "queryRewrite": True},
+        provider=FakeLLM(),
+    )
+    assert captured_call["top_k"] == 4
+    assert captured_call["retrieval_mode"] == "hybrid"
+    assert res.rewritten_query is not None
+    assert "Pro" in captured_call["query"]
+    assert res.to_dict()["trace"]["rewritten_query"] == res.rewritten_query

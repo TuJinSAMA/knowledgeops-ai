@@ -36,3 +36,4 @@ class AnswerRequest(BaseModel):
     query: str
     config: dict[str, Any] = Field(default_factory=dict)
     conversation_id: str | None = None
+    history: list[dict[str, str]] | None = None

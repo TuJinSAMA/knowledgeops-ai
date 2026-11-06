@@ -42,6 +42,7 @@ def _event_stream(body: AnswerRequest) -> Iterator[str]:
                 workspace_id=body.workspace_id,
                 knowledge_base_id=body.knowledge_base_id,
                 query=body.query,
+                history=body.history,
                 config=body.config,
                 settings=settings,
             ):
