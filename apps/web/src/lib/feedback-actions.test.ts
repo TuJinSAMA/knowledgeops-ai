@@ -24,6 +24,7 @@ vi.mock("./authz", () => ({
 const getMessageFeedbackContextMock = vi.fn();
 const upsertFeedbackMock = vi.fn();
 const updateFeedbackReviewMock = vi.fn();
+const promoteFeedbackToCaseMock = vi.fn();
 // Keep the real enum constants (used for validation) but mock the DB-backed
 // functions so these tests never touch a database.
 vi.mock("./feedback", () => ({
@@ -35,11 +36,19 @@ vi.mock("./feedback", () => ({
     getMessageFeedbackContextMock(...args),
   upsertFeedback: (...args: unknown[]) => upsertFeedbackMock(...args),
   updateFeedbackReview: (...args: unknown[]) => updateFeedbackReviewMock(...args),
+  promoteFeedbackToCase: (...args: unknown[]) => promoteFeedbackToCaseMock(...args),
+}));
+
+const recordAuditMock = vi.fn();
+vi.mock("./audit", () => ({
+  AUDIT_ACTIONS: { FEEDBACK_PROMOTE_CASE: "feedback.promote-case" },
+  recordAudit: (...args: unknown[]) => recordAuditMock(...args),
 }));
 
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
 import {
+  promoteFeedbackToCaseAction,
   submitFeedbackAction,
   updateFeedbackReviewAction,
 } from "./feedback-actions";
@@ -247,5 +256,102 @@ describe("updateFeedbackReviewAction", () => {
     );
 
     expect(result.errorCode).toBe("FEEDBACK_NOT_FOUND");
+  });
+});
+
+describe("promoteFeedbackToCaseAction", () => {
+  beforeEach(() => {
+    requireWorkspaceMemberBySlugMock.mockResolvedValue({
+      workspaceId: WORKSPACE_ID,
+      user: { id: USER_ID },
+      role: "ADMIN",
+    });
+    promoteFeedbackToCaseMock.mockResolvedValue({
+      ok: true,
+      caseId: "case-1",
+      datasetId: "ds-1",
+      datasetName: "Regression Set",
+    });
+  });
+
+  it("requires ADMIN, promotes feedback to case, and records an audit log entry", async () => {
+    const result = await promoteFeedbackToCaseAction(
+      SLUG,
+      FEEDBACK_ID,
+      {},
+      reviewFormData({
+        datasetId: "ds-1",
+        question: "How do I apply for a refund?",
+        expectedAnswer: "Email billing@nimbusdesk.example within 7 days",
+        requiredFacts: "7 days\nbilling@nimbusdesk.example",
+        expectedSourceDocuments: "doc-1",
+        tags: "from-feedback, wrong-answer",
+        markResolved: "on",
+      }),
+    );
+
+    expect(requireWorkspaceMemberBySlugMock).toHaveBeenCalledWith(SLUG, "ADMIN");
+    expect(promoteFeedbackToCaseMock).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      FEEDBACK_ID,
+      {
+        datasetId: "ds-1",
+        newDatasetName: null,
+        question: "How do I apply for a refund?",
+        expectedAnswer: "Email billing@nimbusdesk.example within 7 days",
+        requiredFacts: ["7 days", "billing@nimbusdesk.example"],
+        expectedSourceDocuments: ["doc-1"],
+        tags: ["from-feedback", "wrong-answer"],
+        markResolved: true,
+      },
+    );
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: WORKSPACE_ID,
+        actorId: USER_ID,
+        action: "feedback.promote-case",
+        target: { type: "evaluation_case", id: "case-1" },
+      }),
+    );
+    expect(result).toEqual({
+      ok: true,
+      caseId: "case-1",
+      datasetId: "ds-1",
+      datasetName: "Regression Set",
+    });
+  });
+
+  it("rejects a caller below ADMIN without promoting", async () => {
+    requireWorkspaceMemberBySlugMock.mockRejectedValue(
+      new AuthzError(403, "Requires ADMIN role or higher"),
+    );
+
+    const result = await promoteFeedbackToCaseAction(
+      SLUG,
+      FEEDBACK_ID,
+      {},
+      reviewFormData({ datasetId: "ds-1", question: "Q?" }),
+    );
+
+    expect(result.errorCode).toBe("AUTHORIZATION_FAILED");
+    expect(promoteFeedbackToCaseMock).not.toHaveBeenCalled();
+    expect(recordAuditMock).not.toHaveBeenCalled();
+  });
+
+  it("maps domain failure reasons to errorCode without recording audit", async () => {
+    promoteFeedbackToCaseMock.mockResolvedValue({
+      ok: false,
+      reason: "FEEDBACK_ALREADY_PROMOTED",
+    });
+
+    const result = await promoteFeedbackToCaseAction(
+      SLUG,
+      FEEDBACK_ID,
+      {},
+      reviewFormData({ datasetId: "ds-1", question: "Q?" }),
+    );
+
+    expect(result.errorCode).toBe("FEEDBACK_ALREADY_PROMOTED");
+    expect(recordAuditMock).not.toHaveBeenCalled();
   });
 });

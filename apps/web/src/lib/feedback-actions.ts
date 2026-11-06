@@ -2,7 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 
-import type { ActionErrorCode, ActionState } from "./action-errors";
+import {
+  type ActionErrorCode,
+  type ActionState,
+  withLocalePath,
+} from "./action-errors";
+import { AUDIT_ACTIONS, recordAudit } from "./audit";
 import { AuthzError, requireWorkspaceMemberBySlug } from "./authz";
 import {
   COMMENT_MAX,
@@ -14,6 +19,7 @@ import {
   type FeedbackReportType,
   type FeedbackReviewStatus,
   getMessageFeedbackContext,
+  promoteFeedbackToCase,
   updateFeedbackReview,
   upsertFeedback,
 } from "./feedback";
@@ -133,7 +139,107 @@ export async function updateFeedbackReviewAction(
     return { errorCode: "FEEDBACK_NOT_FOUND" };
   }
 
-  revalidatePath(`/${workspaceSlug}/feedback`);
-  revalidatePath(`/${workspaceSlug}/feedback/${feedbackId}`);
+  revalidatePath(await withLocalePath(`/${workspaceSlug}/feedback`));
+  revalidatePath(
+    await withLocalePath(`/${workspaceSlug}/feedback/${feedbackId}`),
+  );
   return { ok: true };
+}
+
+function parseList(raw: FormDataEntryValue | null): string[] | null {
+  const text = String(raw ?? "").trim();
+  if (!text) {
+    return null;
+  }
+  const items = text
+    .split(/[\n,]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return items.length > 0 ? items : null;
+}
+
+export type PromoteActionState = ActionState & {
+  ok?: boolean;
+  caseId?: string;
+  datasetId?: string;
+  datasetName?: string;
+};
+
+/**
+ * Promote a feedback item into an evaluation regression case inside an existing
+ * or inline-created dataset. Requires ADMIN or higher in the workspace.
+ */
+export async function promoteFeedbackToCaseAction(
+  workspaceSlug: string,
+  feedbackId: string,
+  _prev: PromoteActionState,
+  formData: FormData,
+): Promise<PromoteActionState> {
+  let workspaceId: string;
+  let actorId: string;
+  try {
+    const ctx = await requireWorkspaceMemberBySlug(workspaceSlug, "ADMIN");
+    workspaceId = ctx.workspaceId;
+    actorId = ctx.user.id;
+  } catch (error) {
+    if (error instanceof AuthzError) {
+      return { errorCode: "AUTHORIZATION_FAILED" };
+    }
+    throw error;
+  }
+
+  const datasetChoice = String(formData.get("datasetId") ?? "").trim();
+  const newDatasetName = String(formData.get("newDatasetName") ?? "").trim();
+  const question = String(formData.get("question") ?? "").trim();
+  const expectedAnswer = String(formData.get("expectedAnswer") ?? "").trim();
+
+  const result = await promoteFeedbackToCase(workspaceId, feedbackId, {
+    datasetId: datasetChoice && datasetChoice !== "__new__" ? datasetChoice : null,
+    newDatasetName:
+      datasetChoice === "__new__" || !datasetChoice
+        ? newDatasetName || null
+        : null,
+    question,
+    expectedAnswer: expectedAnswer || null,
+    expectedSourceDocuments: parseList(
+      formData.get("expectedSourceDocuments"),
+    ),
+    requiredFacts: parseList(formData.get("requiredFacts")),
+    tags: parseList(formData.get("tags")),
+    markResolved: formData.get("markResolved") === "on",
+  });
+
+  if (!result.ok) {
+    return { errorCode: result.reason };
+  }
+
+  await recordAudit({
+    workspaceId,
+    actorId,
+    action: AUDIT_ACTIONS.FEEDBACK_PROMOTE_CASE,
+    target: { type: "evaluation_case", id: result.caseId },
+    metadata: {
+      feedback_id: feedbackId,
+      dataset_id: result.datasetId,
+      name: result.datasetName,
+    },
+  });
+
+  revalidatePath(await withLocalePath(`/${workspaceSlug}/feedback`));
+  revalidatePath(
+    await withLocalePath(`/${workspaceSlug}/feedback/${feedbackId}`),
+  );
+  revalidatePath(await withLocalePath(`/${workspaceSlug}/evaluations`));
+  revalidatePath(
+    await withLocalePath(
+      `/${workspaceSlug}/evaluations/${result.datasetId}`,
+    ),
+  );
+
+  return {
+    ok: true,
+    caseId: result.caseId,
+    datasetId: result.datasetId,
+    datasetName: result.datasetName,
+  };
 }
