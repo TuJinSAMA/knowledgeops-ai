@@ -25,7 +25,7 @@ from sqlalchemy.orm import Session
 from app.config import Settings, get_settings
 from app.evaluation import metrics
 from app.rag.answer import AnswerResult, generate_answer
-from app.rag.llm import LLMProvider, get_llm_provider
+from app.rag.llm import FakeLLM, LLMProvider, get_llm_provider
 
 logger = logging.getLogger(__name__)
 
@@ -133,9 +133,20 @@ def _evaluate_case(
     )
     groundedness = metrics.groundedness_approx(answer.answer, answer.final_context)
 
-    # Optional LLM-as-judge refinement (off by default; deterministic fallback
-    # on any failure so fake/offline mode is unaffected).
-    if settings.evaluation_use_llm_judge and not answer.refused:
+    # Optional LLM-as-judge refinement (per-run config overrides global setting;
+    # deterministic fallback on any failure so fake/offline mode is unaffected).
+    raw_judge_flag = (
+        config.get("use_llm_judge")
+        if config.get("use_llm_judge") is not None
+        else config.get("useLlmJudge")
+    )
+    use_llm_judge = (
+        bool(raw_judge_flag)
+        if raw_judge_flag is not None
+        else settings.evaluation_use_llm_judge
+    )
+    judge_rationale: str | None = None
+    if use_llm_judge and not answer.refused and not isinstance(provider, FakeLLM):
         judged = _llm_judge_scores(
             provider,
             question=question,
@@ -144,17 +155,41 @@ def _evaluate_case(
             expected_answer=case.get("expected_answer"),
         )
         if judged is not None:
-            judged_correctness, judged_groundedness = judged
+            judged_correctness, judged_groundedness, judge_rationale = judged
             if judged_correctness is not None:
                 correctness = judged_correctness
             if judged_groundedness is not None:
                 groundedness = judged_groundedness
+
+    has_expectations = bool(
+        (case.get("expected_answer") and str(case.get("expected_answer")).strip())
+        or case.get("required_facts")
+        or case.get("expected_source_documents")
+        or case.get("expected_chunks")
+    )
+    tags = [str(t).lower() for t in (case.get("tags") or []) if t]
+    expect_refusal = "refuse" in tags
+
+    failure_category = metrics.classify_case_failure(
+        refused=answer.refused,
+        retrieval_hit=retrieval_hit,
+        citation_accuracy=citation_acc,
+        correctness=correctness,
+        groundedness=groundedness,
+        has_expectations=has_expectations,
+        expect_refusal=expect_refusal,
+    )
 
     usage = answer.usage
     prompt_tokens = usage.prompt_tokens if usage else None
     completion_tokens = usage.completion_tokens if usage else None
     cost = metrics.estimate_cost(answer.model, prompt_tokens, completion_tokens)
     latency_ms = int(round(sum(answer.stage_latency_ms.values())))
+
+    raw_snapshot = _build_raw_snapshot(answer)
+    raw_snapshot["failure_category"] = failure_category
+    if judge_rationale:
+        raw_snapshot["judge_rationale"] = judge_rationale
 
     return {
         "retrieval_hit": retrieval_hit,
@@ -164,7 +199,8 @@ def _evaluate_case(
         "latency_ms": latency_ms,
         "cost_estimate": cost,
         "refused": answer.refused,
-        "raw": _build_raw_snapshot(answer),
+        "failure_category": failure_category,
+        "raw": raw_snapshot,
     }
 
 
@@ -173,8 +209,9 @@ _JUDGE_SYSTEM_PROMPT = (
     "the supporting context, and optionally a reference answer, rate the "
     "candidate on two axes from 0.0 to 1.0: correctness (does it match the "
     "reference / answer the question) and groundedness (is every claim "
-    "supported by the context). Respond with ONLY a JSON object like "
-    '{"correctness": 0.8, "groundedness": 0.9}.'
+    "supported by the context), plus a brief 1-sentence rationale in the same "
+    "language as the question. Respond with ONLY a JSON object like "
+    '{"correctness": 0.8, "groundedness": 0.9, "rationale": "..."}.'
 )
 
 
@@ -185,7 +222,7 @@ def _llm_judge_scores(
     answer: str,
     context: str,
     expected_answer: str | None,
-) -> tuple[float | None, float | None] | None:
+) -> tuple[float | None, float | None, str | None] | None:
     """Ask the LLM provider to score correctness/groundedness in [0, 1].
 
     Returns ``None`` (so the caller keeps deterministic scores) on any provider
@@ -211,8 +248,12 @@ def _llm_judge_scores(
         logger.warning("LLM judge failed; keeping deterministic scores: %s", exc)
         return None
 
-    return _clamp_score(parsed.get("correctness")), _clamp_score(
-        parsed.get("groundedness")
+    rationale = parsed.get("rationale")
+    clean_rationale = str(rationale).strip() if rationale else None
+    return (
+        _clamp_score(parsed.get("correctness")),
+        _clamp_score(parsed.get("groundedness")),
+        clean_rationale,
     )
 
 

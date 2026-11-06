@@ -200,7 +200,42 @@ def estimate_cost(
     return round(cost, 6)
 
 
-# ----- Aggregation -----
+# ----- Failure Attribution & Aggregation -----
+
+
+def classify_case_failure(
+    *,
+    refused: bool,
+    retrieval_hit: float | None,
+    citation_accuracy: float | None,
+    correctness: float | None,
+    groundedness: float | None,
+    has_expectations: bool,
+    expect_refusal: bool = False,
+) -> str:
+    """Classify one evaluation case outcome into an actionable root-cause category."""
+    if refused:
+        if expect_refusal or not has_expectations:
+            return "PASS"
+        return "UNEXPECTED_REFUSAL"
+
+    if expect_refusal and not has_expectations:
+        return "HALLUCINATION_RISK"
+
+    if retrieval_hit is not None and retrieval_hit < 0.5:
+        return "RETRIEVAL_MISS"
+
+    if groundedness is not None and groundedness < 0.5:
+        return "HALLUCINATION_RISK"
+
+    if citation_accuracy is not None and citation_accuracy < 0.5:
+        return "BAD_CITATION"
+
+    if correctness is not None and correctness < 0.6:
+        return "INCOMPLETE_ANSWER"
+
+    return "PASS"
+
 
 # Per-case metric keys aggregated into a run summary by simple mean over the
 # cases where the metric is applicable (not None).
@@ -220,7 +255,7 @@ def summarize_results(results: Sequence[dict]) -> dict:
     ``cost_estimate`` (float or None) and ``refused`` (bool). Averages skip
     ``None`` entries so "not applicable" never drags a score toward zero.
     """
-    summary: dict[str, float | int] = {"case_count": len(results)}
+    summary: dict[str, float | int | dict[str, int]] = {"case_count": len(results)}
 
     for key in _AVERAGED_METRICS:
         values = [
@@ -240,4 +275,17 @@ def summarize_results(results: Sequence[dict]) -> dict:
         summary["total_cost"] = round(sum(costs), 6)
 
     summary["refused_count"] = sum(1 for r in results if r.get("refused"))
+
+    failure_counts: dict[str, int] = {}
+    for r in results:
+        cat = r.get("failure_category") or (
+            r.get("raw", {}).get("failure_category")
+            if isinstance(r.get("raw"), dict)
+            else None
+        )
+        if isinstance(cat, str) and cat:
+            failure_counts[cat] = failure_counts.get(cat, 0) + 1
+    if failure_counts:
+        summary["failure_counts"] = failure_counts
+
     return summary

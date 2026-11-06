@@ -189,3 +189,103 @@ def test_correctness_and_groundedness_support_chinese_text():
         "自成功付款之日起 7 天内，可申请全额退款。",
     )
     assert grounded is not None and grounded > 0.7
+
+
+def test_classify_case_failure_categories():
+    # 1. Expected refusal case that refused -> PASS
+    assert (
+        metrics.classify_case_failure(
+            refused=True,
+            retrieval_hit=None,
+            citation_accuracy=None,
+            correctness=None,
+            groundedness=None,
+            has_expectations=False,
+            expect_refusal=True,
+        )
+        == "PASS"
+    )
+    # 2. Expected answer case that refused -> UNEXPECTED_REFUSAL
+    assert (
+        metrics.classify_case_failure(
+            refused=True,
+            retrieval_hit=1.0,
+            citation_accuracy=0.0,
+            correctness=0.0,
+            groundedness=None,
+            has_expectations=True,
+            expect_refusal=False,
+        )
+        == "UNEXPECTED_REFUSAL"
+    )
+    # 3. Retrieval miss -> RETRIEVAL_MISS
+    assert (
+        metrics.classify_case_failure(
+            refused=False,
+            retrieval_hit=0.0,
+            citation_accuracy=0.0,
+            correctness=0.2,
+            groundedness=0.9,
+            has_expectations=True,
+        )
+        == "RETRIEVAL_MISS"
+    )
+    # 4. Hallucination risk -> HALLUCINATION_RISK
+    assert (
+        metrics.classify_case_failure(
+            refused=False,
+            retrieval_hit=1.0,
+            citation_accuracy=1.0,
+            correctness=0.8,
+            groundedness=0.2,
+            has_expectations=True,
+        )
+        == "HALLUCINATION_RISK"
+    )
+    # 5. Bad citation -> BAD_CITATION
+    assert (
+        metrics.classify_case_failure(
+            refused=False,
+            retrieval_hit=1.0,
+            citation_accuracy=0.0,
+            correctness=0.9,
+            groundedness=0.9,
+            has_expectations=True,
+        )
+        == "BAD_CITATION"
+    )
+    # 6. Incomplete answer -> INCOMPLETE_ANSWER
+    assert (
+        metrics.classify_case_failure(
+            refused=False,
+            retrieval_hit=1.0,
+            citation_accuracy=1.0,
+            correctness=0.3,
+            groundedness=0.9,
+            has_expectations=True,
+        )
+        == "INCOMPLETE_ANSWER"
+    )
+    # 7. All good -> PASS
+    assert (
+        metrics.classify_case_failure(
+            refused=False,
+            retrieval_hit=1.0,
+            citation_accuracy=1.0,
+            correctness=0.9,
+            groundedness=0.9,
+            has_expectations=True,
+        )
+        == "PASS"
+    )
+
+
+def test_summarize_results_aggregates_failure_counts():
+    summary = metrics.summarize_results(
+        [
+            {"retrieval_hit": 1.0, "refused": False, "failure_category": "PASS"},
+            {"retrieval_hit": 0.0, "refused": False, "failure_category": "RETRIEVAL_MISS"},
+            {"retrieval_hit": 1.0, "refused": False, "failure_category": "PASS"},
+        ]
+    )
+    assert summary["failure_counts"] == {"PASS": 2, "RETRIEVAL_MISS": 1}
