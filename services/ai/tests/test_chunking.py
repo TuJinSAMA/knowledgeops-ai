@@ -88,6 +88,7 @@ def test_contextual_chunking_injects_document_and_section_breadcrumb():
         document_title="03-refund-policy.md",
     )
     assert len(chunks) >= 2
+    assert all(len(c.content) <= 90 for c in chunks)
     assert any("03-refund-policy.md" in c.content for c in chunks)
     # Later chunk under '## 如何申请' carries the section context
     apply_chunks = [c for c in chunks if "billing@nimbusdesk.example" in c.content]

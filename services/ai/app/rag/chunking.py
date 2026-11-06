@@ -76,7 +76,7 @@ def chunk_text(
     has_headings = bool(_HEADING_LINE_PATTERN.search(text))
 
     # Reserve space for the contextual header when title/headings are used.
-    max_header_reserve = min(chunk_size // 3, 80) if (title or has_headings) else 0
+    max_header_reserve = min(chunk_size // 2, 80) if (title or has_headings) else 0
     body_size = max(1, chunk_size - max_header_reserve)
     effective_overlap = min(chunk_overlap, max(0, body_size - 1))
 
@@ -106,8 +106,7 @@ def _attach_context_headers(
     out: list[str] = []
 
     for chunk in chunks:
-        # Snapshot active headings at the start of the chunk, and update with any
-        # headings that appear inside this chunk.
+        # Update active headings with any headings that appear inside this chunk.
         for match in _HEADING_LINE_PATTERN.finditer(chunk):
             level = len(match.group(1))
             heading_text = match.group(2).strip()
@@ -124,8 +123,14 @@ def _attach_context_headers(
         if breadcrumb:
             parts.append(f"Section: {breadcrumb}")
 
-        if parts:
-            header = f"[{' | '.join(parts)}]\n"
+        budget = chunk_size - len(chunk)
+        if parts and budget >= 6:
+            inner = " | ".join(parts)
+            # Fit header within the remaining character budget so total <= chunk_size.
+            max_inner = budget - 3  # accounts for "[" + "]\n"
+            if len(inner) > max_inner:
+                inner = inner[:max_inner]
+            header = f"[{inner}]\n"
             out.append(header + chunk)
         else:
             out.append(chunk)
