@@ -1,4 +1,5 @@
 import {
+  type AnyPgColumn,
   boolean,
   index,
   integer,
@@ -400,6 +401,12 @@ export const answerFeedback = pgTable(
     comment: text("comment"),
     reviewStatus: feedbackReviewStatus("review_status").notNull().default("NEW"),
     failureReason: text("failure_reason"),
+    // Optional link to the evaluation_cases row created by promoting this
+    // feedback into a regression test case. Set to null if the case is deleted.
+    promotedCaseId: uuid("promoted_case_id").references(
+      (): AnyPgColumn => evaluationCases.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -413,6 +420,7 @@ export const answerFeedback = pgTable(
     index("answer_feedback_workspace_idx").on(table.workspaceId),
     index("answer_feedback_message_idx").on(table.messageId),
     index("answer_feedback_review_status_idx").on(table.reviewStatus),
+    index("answer_feedback_promoted_case_idx").on(table.promotedCaseId),
   ],
 );
 

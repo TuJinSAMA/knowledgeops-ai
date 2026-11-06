@@ -50,6 +50,13 @@
       "when": 1781603586398,
       "tag": "0006_cloudy_lady_ursula",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793930487946,
+      "tag": "0007_fancy_lady_mastermind",
+      "breakpoints": true
     }
   ]
 }

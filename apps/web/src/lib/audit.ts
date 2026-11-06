@@ -16,6 +16,7 @@ export const AUDIT_ACTIONS = {
   MEMBER_ROLE_UPDATE: "member.role-update",
   MEMBER_REMOVE: "member.remove",
   EVALUATION_RUN_TRIGGER: "evaluation-run.trigger",
+  FEEDBACK_PROMOTE_CASE: "feedback.promote-case",
 } as const;
 
 export type AuditAction =

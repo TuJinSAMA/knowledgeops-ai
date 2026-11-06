@@ -1,0 +1,3 @@
+ALTER TABLE "answer_feedback" ADD COLUMN "promoted_case_id" uuid;--> statement-breakpoint
+ALTER TABLE "answer_feedback" ADD CONSTRAINT "answer_feedback_promoted_case_id_evaluation_cases_id_fk" FOREIGN KEY ("promoted_case_id") REFERENCES "public"."evaluation_cases"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+CREATE INDEX "answer_feedback_promoted_case_idx" ON "answer_feedback" USING btree ("promoted_case_id");
