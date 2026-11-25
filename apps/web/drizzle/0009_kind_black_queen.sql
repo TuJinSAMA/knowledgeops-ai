@@ -1,0 +1,2 @@
+ALTER TABLE "rag_traces" ADD COLUMN "refused" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+CREATE INDEX "rag_traces_workspace_refused_created_idx" ON "rag_traces" USING btree ("workspace_id","refused","created_at");

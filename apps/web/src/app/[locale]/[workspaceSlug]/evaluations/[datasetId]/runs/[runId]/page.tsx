@@ -2,6 +2,8 @@ import { Link } from "@/i18n/navigation";
 import { getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 
+import { PromoteRunConfigButton } from "@/components/evaluation/PromoteRunConfigButton";
+import { hasMinRole } from "@/lib/authz";
 import {
   type EvaluationRunStatus,
   getEvaluationDataset,
@@ -16,6 +18,8 @@ import {
   RUN_METRIC_KEYS,
   summaryMetric,
 } from "@/lib/evaluation-format";
+import { getKnowledgeBase } from "@/lib/knowledge-base";
+import { areRagConfigsEqual } from "@/lib/rag-config";
 import { requireUser } from "@/lib/session";
 import { getUserWorkspaceBySlug } from "@/lib/workspace";
 
@@ -78,7 +82,13 @@ export default async function EvaluationRunPage({
     notFound();
   }
 
-  const results = await listEvaluationResults(workspace.id, runId);
+  const canManage = hasMinRole(workspace.role, "ADMIN");
+  const [results, boundKb] = await Promise.all([
+    listEvaluationResults(workspace.id, runId),
+    dataset.knowledgeBaseId
+      ? getKnowledgeBase(workspace.id, dataset.knowledgeBaseId)
+      : Promise.resolve(null),
+  ]);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
@@ -89,13 +99,25 @@ export default async function EvaluationRunPage({
         ← {dataset.name}
       </Link>
 
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-semibold tracking-tight">{t("evaluationRun")}</h1>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(run.status)}`}
-        >
-          {t(`statusLabels.${run.status}`)}
-        </span>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold tracking-tight">{t("evaluationRun")}</h1>
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(run.status)}`}
+          >
+            {t(`statusLabels.${run.status}`)}
+          </span>
+        </div>
+        {boundKb && run.status === "COMPLETED" && (
+          <PromoteRunConfigButton
+            workspaceSlug={workspaceSlug}
+            datasetId={datasetId}
+            runId={run.id}
+            knowledgeBaseName={boundKb.name}
+            isLive={areRagConfigsEqual(run.config, boundKb.ragConfig)}
+            canManage={canManage}
+          />
+        )}
       </div>
       <p className="mt-1 text-sm text-neutral-600 dark:text-neutral-400">
         {t("config")}: {formatConfig(run.config, t("defaults"))}

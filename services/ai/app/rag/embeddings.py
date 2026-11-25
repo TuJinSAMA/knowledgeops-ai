@@ -26,6 +26,7 @@ import random
 import time
 from abc import ABC, abstractmethod
 
+from app.cache import get_cached_embeddings_sync, set_cached_embeddings_sync
 from app.config import Settings, get_settings
 
 # Provider identifiers (AI_PROVIDER values).
@@ -127,20 +128,65 @@ class OpenRouterEmbeddings(EmbeddingProvider):
         batch_size: int = 64,
         timeout: float = 60.0,
         max_retries: int = 4,
+        redis_url: str | None = None,
     ) -> None:
         super().__init__(dimensions=dimensions, model=model)
         self._batch_size = max(1, batch_size)
         self._max_retries = max(1, max_retries)
+        self._redis_url = redis_url
         # Imported lazily so the fake path needs neither the SDK nor a key.
         from openai import OpenAI
 
         self._client = OpenAI(api_key=api_key, base_url=base_url, timeout=timeout)
 
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        vectors: list[list[float]] = []
-        for start in range(0, len(texts), self._batch_size):
-            batch = texts[start : start + self._batch_size]
-            vectors.extend(self._embed_batch(batch))
+        if not texts:
+            return []
+
+        results: list[list[float] | None] = [None] * len(texts)
+        if self._redis_url:
+            cached_hits = get_cached_embeddings_sync(
+                texts,
+                model=self.model,
+                dimensions=self.dimensions,
+                redis_url=self._redis_url,
+            )
+            for idx, vec in cached_hits.items():
+                results[idx] = vec
+
+        # Deduplicate uncached texts so identical inputs in one batch only hit
+        # the upstream API once.
+        missing_unique: list[str] = []
+        missing_positions: dict[str, list[int]] = {}
+        for idx, text in enumerate(texts):
+            if results[idx] is not None:
+                continue
+            if text not in missing_positions:
+                missing_positions[text] = []
+                missing_unique.append(text)
+            missing_positions[text].append(idx)
+
+        if missing_unique:
+            computed_unique: list[list[float]] = []
+            for start in range(0, len(missing_unique), self._batch_size):
+                batch = missing_unique[start : start + self._batch_size]
+                computed_unique.extend(self._embed_batch(batch))
+
+            to_cache: list[tuple[str, list[float]]] = []
+            for text, vec in zip(missing_unique, computed_unique, strict=True):
+                to_cache.append((text, vec))
+                for pos in missing_positions[text]:
+                    results[pos] = vec
+
+            if self._redis_url:
+                set_cached_embeddings_sync(
+                    to_cache,
+                    model=self.model,
+                    dimensions=self.dimensions,
+                    redis_url=self._redis_url,
+                )
+
+        vectors = [vec for vec in results if vec is not None]
         self._validate(vectors, len(texts))
         return vectors
 
@@ -195,6 +241,7 @@ def get_embedding_provider(settings: Settings | None = None) -> EmbeddingProvide
             batch_size=settings.embedding_batch_size,
             timeout=settings.embedding_timeout_seconds,
             max_retries=settings.embedding_max_retries,
+            redis_url=settings.redis_url if settings.embedding_cache_enabled else None,
         )
 
     raise EmbeddingError(f"Unknown AI_PROVIDER: {settings.ai_provider!r}")

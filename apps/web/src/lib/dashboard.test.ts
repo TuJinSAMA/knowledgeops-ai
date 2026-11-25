@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("drizzle-orm", () => ({
   eq: (col: unknown, val: unknown) => ({ op: "eq", col, val }),
+  ne: (col: unknown, val: unknown) => ({ op: "ne", col, val }),
+  gte: (col: unknown, val: unknown) => ({ op: "gte", col, val }),
   and: (...conds: unknown[]) => ({ op: "and", conds }),
   desc: (col: unknown) => ({ op: "desc", col }),
   sql: () => ({ mapWith: () => ({}) }),
@@ -63,10 +65,13 @@ vi.mock("@/db", () => ({
 import * as schema from "@/db/schema";
 
 import {
+  clusterRefusedTraces,
   getDashboardMetrics,
   getFeedbackDistribution,
+  getKnowledgeGaps,
   getKnowledgeStats,
   getTraceStats,
+  normalizeGapQueryKey,
 } from "./dashboard";
 
 const WS = "ws-1";
@@ -163,5 +168,66 @@ describe("getFeedbackDistribution", () => {
   it("buckets ratings into helpful / not helpful", async () => {
     const dist = await getFeedbackDistribution(WS);
     expect(dist).toEqual({ helpful: 4, notHelpful: 1, total: 5 });
+  });
+});
+
+describe("knowledge gap clustering & tenant isolation", () => {
+  it("normalizes CJK and ASCII punctuation into identical cluster keys", () => {
+    expect(normalizeGapQueryKey("  年假有几天？ ")).toBe("年假有几天");
+    expect(normalizeGapQueryKey("年假有几天?!!")).toBe("年假有几天");
+    expect(normalizeGapQueryKey("What is SSO?")).toBe("what is sso");
+  });
+
+  it("clusters repeated refused queries per KB and ranks by frequency then recency", () => {
+    const clusters = clusterRefusedTraces([
+      {
+        id: "t-3",
+        query: "年假有几天？",
+        knowledgeBaseId: "kb-1",
+        knowledgeBaseName: "SaaS 客服库",
+        createdAt: new Date("2026-11-25T10:00:00Z"),
+      },
+      {
+        id: "t-2",
+        query: "年假有几天?",
+        knowledgeBaseId: "kb-1",
+        knowledgeBaseName: "SaaS 客服库",
+        createdAt: new Date("2026-11-24T10:00:00Z"),
+      },
+      {
+        id: "t-1",
+        query: "支持私有化部署吗？",
+        knowledgeBaseId: "kb-1",
+        knowledgeBaseName: "SaaS 客服库",
+        createdAt: new Date("2026-11-23T10:00:00Z"),
+      },
+    ]);
+
+    expect(clusters).toHaveLength(2);
+    expect(clusters[0]).toMatchObject({
+      sampleQuery: "年假有几天？",
+      count: 2,
+      latestTraceId: "t-3",
+      knowledgeBaseId: "kb-1",
+    });
+    expect(clusters[1]).toMatchObject({
+      sampleQuery: "支持私有化部署吗？",
+      count: 1,
+    });
+  });
+
+  it("scopes getKnowledgeGaps queries strictly to the workspace", async () => {
+    captured.resultsByTable.set(schema.ragTraces, []);
+    captured.resultsByTable.set(schema.answerFeedback, [{ value: 2 }]);
+
+    const gaps = await getKnowledgeGaps(WS, { windowDays: 30, limit: 5 });
+
+    expect(gaps.unresolvedMissingKnowledgeCount).toBe(2);
+    expect(gaps.totalRefusedCount).toBe(0);
+    expect(captured.wheres).toHaveLength(2);
+    for (const where of captured.wheres) {
+      expect(collectVals(where)).toContain(WS);
+      expect(collectVals(where)).not.toContain("ws-2");
+    }
   });
 });

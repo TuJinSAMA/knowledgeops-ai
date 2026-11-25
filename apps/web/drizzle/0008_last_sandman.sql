@@ -1,0 +1,1 @@
+ALTER TABLE "knowledge_bases" ADD COLUMN "rag_config" jsonb;

@@ -13,6 +13,8 @@ import {
   listEvaluationCases,
   listEvaluationRuns,
 } from "@/lib/evaluation";
+import { getKnowledgeBase } from "@/lib/knowledge-base";
+import { areRagConfigsEqual } from "@/lib/rag-config";
 import { requireUser } from "@/lib/session";
 import { getUserWorkspaceBySlug } from "@/lib/workspace";
 
@@ -57,9 +59,12 @@ export default async function EvaluationDatasetPage({
   }
 
   const canManage = hasMinRole(workspace.role, "ADMIN");
-  const [cases, runs] = await Promise.all([
+  const [cases, runs, boundKb] = await Promise.all([
     listEvaluationCases(workspace.id, datasetId),
     listEvaluationRuns(workspace.id, datasetId),
+    dataset.knowledgeBaseId
+      ? getKnowledgeBase(workspace.id, dataset.knowledgeBaseId)
+      : Promise.resolve(null),
   ]);
 
   return (
@@ -200,12 +205,21 @@ export default async function EvaluationDatasetPage({
                     className="border-b border-neutral-100 last:border-0 dark:border-neutral-900"
                   >
                     <td className="px-4 py-3">
-                      <Link
-                        href={`/${workspaceSlug}/evaluations/${datasetId}/runs/${run.id}`}
-                        className="font-medium underline-offset-4 hover:underline"
-                      >
-                        {formatConfig(run.config, t("defaults"))}
-                      </Link>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={`/${workspaceSlug}/evaluations/${datasetId}/runs/${run.id}`}
+                          className="font-medium underline-offset-4 hover:underline"
+                        >
+                          {formatConfig(run.config, t("defaults"))}
+                        </Link>
+                        {boundKb &&
+                          run.status === "COMPLETED" &&
+                          areRagConfigsEqual(run.config, boundKb.ragConfig) && (
+                            <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-800 dark:bg-emerald-950 dark:text-emerald-300">
+                              {t("liveBadge")}
+                            </span>
+                          )}
+                      </div>
                     </td>
                     <td className="px-4 py-3">
                       <span
@@ -234,6 +248,7 @@ export default async function EvaluationDatasetPage({
               <TriggerEvaluationRunForm
                 workspaceSlug={workspaceSlug}
                 datasetId={datasetId}
+                initialConfig={boundKb?.ragConfig ?? null}
                 disabled={cases.length === 0}
               />
             </div>

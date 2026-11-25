@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 
 import { DeleteKnowledgeBaseButton } from "@/components/knowledge-base/DeleteKnowledgeBaseButton";
 import { DocumentsPanel } from "@/components/knowledge-base/DocumentsPanel";
+import { KnowledgeBaseRagConfigForm } from "@/components/knowledge-base/KnowledgeBaseRagConfigForm";
 import { hasMinRole } from "@/lib/authz";
 import { getKnowledgeBase, listDocuments } from "@/lib/knowledge-base";
 import { requireUser } from "@/lib/session";
@@ -59,8 +60,18 @@ export default async function KnowledgeBaseDetailPage({
       </div>
 
       <section className="mt-8">
+        <KnowledgeBaseRagConfigForm
+          workspaceSlug={workspaceSlug}
+          knowledgeBaseId={kb.id}
+          initialConfig={kb.ragConfig}
+          canManage={canManage}
+        />
+      </section>
+
+      <section className="mt-8">
         <DocumentsPanel
           endpoint={documentsEndpoint}
+          documentDetailBasePath={`/${workspaceSlug}/knowledge-bases/${knowledgeBaseId}/documents`}
           initialDocuments={initialDocuments}
           canUpload={canManage}
         />

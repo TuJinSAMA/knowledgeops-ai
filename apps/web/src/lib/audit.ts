@@ -11,12 +11,18 @@ import { auditLogs, user } from "@/db/schema";
 export const AUDIT_ACTIONS = {
   KNOWLEDGE_BASE_CREATE: "knowledge-base.create",
   KNOWLEDGE_BASE_DELETE: "knowledge-base.delete",
+  KNOWLEDGE_BASE_UPDATE_CONFIG: "knowledge-base.update-config",
   DOCUMENT_UPLOAD: "document.upload",
+  DOCUMENT_REPLACE: "document.replace",
+  DOCUMENT_RETRY_INGEST: "document.retry-ingest",
   DOCUMENT_DELETE: "document.delete",
   MEMBER_ROLE_UPDATE: "member.role-update",
   MEMBER_REMOVE: "member.remove",
   EVALUATION_RUN_TRIGGER: "evaluation-run.trigger",
+  EVALUATION_CASE_UPDATE: "evaluation-case.update",
+  EVALUATION_CASE_IMPORT: "evaluation-case.import",
   FEEDBACK_PROMOTE_CASE: "feedback.promote-case",
+  TRACE_PROMOTE_CASE: "trace.promote-case",
 } as const;
 
 export type AuditAction =

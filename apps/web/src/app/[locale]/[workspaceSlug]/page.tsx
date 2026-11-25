@@ -7,6 +7,7 @@ import { hasMinRole } from "@/lib/authz";
 import {
   type DashboardMetrics,
   getDashboardMetrics,
+  getKnowledgeGaps,
 } from "@/lib/dashboard";
 import { formatUsdCost } from "@/lib/pricing";
 import { getQuotaStatus } from "@/lib/quota";
@@ -95,9 +96,10 @@ export default async function WorkspaceDashboardPage({
     notFound();
   }
 
-  const [metrics, quota] = await Promise.all([
+  const [metrics, quota, knowledgeGaps] = await Promise.all([
     getDashboardMetrics(workspace.id),
     getQuotaStatus(workspace.id),
+    getKnowledgeGaps(workspace.id),
   ]);
 
   const canSeeAudit = hasMinRole(workspace.role, "ADMIN");
@@ -179,6 +181,80 @@ export default async function WorkspaceDashboardPage({
           </div>
         </section>
       </div>
+
+      <section className="mt-6 rounded-lg border border-neutral-200 p-5 dark:border-neutral-800">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="font-semibold">{t("knowledgeGaps.title")}</h2>
+            <p className="mt-0.5 text-xs text-neutral-500">
+              {t("knowledgeGaps.subtitle", { days: knowledgeGaps.windowDays })}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Link
+              href={`/${workspace.slug}/traces?status=REFUSED`}
+              className="rounded-full bg-amber-100 px-2.5 py-0.5 font-medium text-amber-800 hover:underline dark:bg-amber-950 dark:text-amber-300"
+            >
+              {t("knowledgeGaps.refusedCount", {
+                count: knowledgeGaps.totalRefusedCount,
+              })}
+            </Link>
+            {knowledgeGaps.unresolvedMissingKnowledgeCount > 0 && (
+              <Link
+                href={`/${workspace.slug}/feedback?status=NEW`}
+                className="rounded-full bg-red-100 px-2.5 py-0.5 font-medium text-red-700 hover:underline dark:bg-red-950 dark:text-red-300"
+              >
+                {t("knowledgeGaps.missingReports", {
+                  count: knowledgeGaps.unresolvedMissingKnowledgeCount,
+                })}
+              </Link>
+            )}
+          </div>
+        </div>
+
+        {knowledgeGaps.topRefusedQueries.length === 0 ? (
+          <p className="mt-4 text-sm text-neutral-500">
+            {t("knowledgeGaps.none")}
+          </p>
+        ) : (
+          <ul className="mt-4 divide-y divide-neutral-100 dark:divide-neutral-900">
+            {knowledgeGaps.topRefusedQueries.map((gap) => (
+              <li
+                key={`${gap.knowledgeBaseId}-${gap.normalizedQuery}`}
+                className="flex flex-wrap items-center justify-between gap-3 py-2.5 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 rounded bg-amber-100 px-1.5 py-0.5 font-mono text-xs font-semibold text-amber-900 dark:bg-amber-950 dark:text-amber-200">
+                      ×{gap.count}
+                    </span>
+                    <span className="truncate font-medium">
+                      {gap.sampleQuery}
+                    </span>
+                  </div>
+                  <p className="mt-0.5 text-xs text-neutral-500">
+                    {gap.knowledgeBaseName}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <Link
+                    href={`/${workspace.slug}/traces/${gap.latestTraceId}`}
+                    className="text-neutral-500 underline-offset-4 hover:underline"
+                  >
+                    {t("knowledgeGaps.inspectTrace")}
+                  </Link>
+                  <Link
+                    href={`/${workspace.slug}/knowledge-bases/${gap.knowledgeBaseId}`}
+                    className="rounded border border-neutral-300 px-2 py-1 font-medium text-neutral-800 transition hover:border-neutral-600 dark:border-neutral-700 dark:text-neutral-200"
+                  >
+                    {t("knowledgeGaps.uploadDocs")}
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
       <section className="mt-6 rounded-lg border border-neutral-200 p-5 dark:border-neutral-800">
         <div className="flex items-center justify-between">

@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { and, eq } from "drizzle-orm";
 
 import { db } from "@/db";
-import { documents, ingestionJobs } from "@/db/schema";
+import { documents, ingestionJobs, knowledgeBases } from "@/db/schema";
 import { env } from "@/env";
 import { getFileStorage } from "./storage";
 
@@ -29,17 +30,24 @@ export type UploadErrorCode =
   | "UPLOAD_FILE_MISSING"
   | "UPLOAD_UNSUPPORTED_TYPE"
   | "UPLOAD_FILE_EMPTY"
-  | "UPLOAD_FILE_TOO_LARGE";
+  | "UPLOAD_FILE_TOO_LARGE"
+  | "DOCUMENT_NOT_FOUND"
+  | "DOCUMENT_BUSY_PROCESSING"
+  | "DOCUMENT_RETRY_NOT_ALLOWED";
 
 /**
  * Error carrying an HTTP status and a machine-readable code so the upload
- * route and client UI can translate it cleanly.
+ * routes and client UI can translate it cleanly.
  */
 export class UploadError extends Error {
-  readonly status: 400 | 413;
+  readonly status: 400 | 404 | 409 | 413;
   readonly code: UploadErrorCode;
 
-  constructor(status: 400 | 413, code: UploadErrorCode, message: string) {
+  constructor(
+    status: 400 | 404 | 409 | 413,
+    code: UploadErrorCode,
+    message: string,
+  ) {
     super(message);
     this.name = "UploadError";
     this.status = status;
@@ -76,30 +84,11 @@ export function resolveMimeType(
   );
 }
 
-export type UploadedDocument = {
-  id: string;
-  title: string;
+async function validateAndReadFile(file: File): Promise<{
+  filename: string;
   mimeType: AllowedMimeType;
-  status: (typeof documents.$inferSelect)["status"];
-};
-
-/**
- * Validate, store, and register an uploaded document:
- *   1. validate MIME + size
- *   2. write the original bytes via the file storage abstraction
- *   3. insert a `documents` row (status PENDING, source_metadata.storage_path)
- *   4. enqueue an INGEST_DOCUMENT job for the Python worker
- *
- * The caller must have already verified workspace membership/role and that the
- * knowledge base belongs to `workspaceId` (tenant isolation).
- */
-export async function ingestUploadedFile(params: {
-  workspaceId: string;
-  knowledgeBaseId: string;
-  file: File;
-}): Promise<UploadedDocument> {
-  const { workspaceId, knowledgeBaseId, file } = params;
-
+  bytes: Buffer;
+}> {
   const filename = file.name || "untitled";
   const mimeType = resolveMimeType(file.type, filename);
 
@@ -124,6 +113,64 @@ export async function ingestUploadedFile(params: {
     );
   }
 
+  return { filename, mimeType, bytes };
+}
+
+async function findScopedDocument(params: {
+  workspaceId: string;
+  knowledgeBaseId: string;
+  documentId: string;
+}) {
+  const [doc] = await db
+    .select({
+      id: documents.id,
+      title: documents.title,
+      status: documents.status,
+      sourceMetadata: documents.sourceMetadata,
+    })
+    .from(documents)
+    .innerJoin(
+      knowledgeBases,
+      eq(documents.knowledgeBaseId, knowledgeBases.id),
+    )
+    .where(
+      and(
+        eq(documents.id, params.documentId),
+        eq(documents.knowledgeBaseId, params.knowledgeBaseId),
+        eq(knowledgeBases.workspaceId, params.workspaceId),
+      ),
+    )
+    .limit(1);
+
+  return doc ?? null;
+}
+
+export type UploadedDocument = {
+  id: string;
+  title: string;
+  mimeType: AllowedMimeType;
+  status: (typeof documents.$inferSelect)["status"];
+  version: number;
+};
+
+/**
+ * Validate, store, and register an uploaded document:
+ *   1. validate MIME + size
+ *   2. write the original bytes via the file storage abstraction
+ *   3. insert a `documents` row (status PENDING, source_metadata.storage_path)
+ *   4. enqueue an INGEST_DOCUMENT job for the Python worker
+ *
+ * The caller must have already verified workspace membership/role and that the
+ * knowledge base belongs to `workspaceId` (tenant isolation).
+ */
+export async function ingestUploadedFile(params: {
+  workspaceId: string;
+  knowledgeBaseId: string;
+  file: File;
+}): Promise<UploadedDocument> {
+  const { workspaceId, knowledgeBaseId, file } = params;
+  const { filename, mimeType, bytes } = await validateAndReadFile(file);
+
   // Generate the id up front so the file is stored before the row exists; if
   // the DB insert fails we clean the orphaned file up.
   const documentId = randomUUID();
@@ -142,6 +189,7 @@ export async function ingestUploadedFile(params: {
           storage_path: storagePath,
           original_filename: filename,
           byte_size: bytes.byteLength,
+          version: 1,
         },
       });
 
@@ -156,5 +204,197 @@ export async function ingestUploadedFile(params: {
     throw err;
   }
 
-  return { id: documentId, title: filename, mimeType, status: "PENDING" };
+  return {
+    id: documentId,
+    title: filename,
+    mimeType,
+    status: "PENDING",
+    version: 1,
+  };
+}
+
+/**
+ * Replace an existing document's file in-place, preserving `documentId` so
+ * historical citations and evaluation `expectedSourceDocuments` stay intact.
+ * Atomically bumps `source_metadata.version`, marks the document `PENDING`,
+ * and enqueues a new `INGEST_DOCUMENT` job (the Python worker's
+ * `_replace_chunks` swaps out the old chunks in a single DB transaction).
+ */
+export async function replaceDocumentFile(params: {
+  workspaceId: string;
+  knowledgeBaseId: string;
+  documentId: string;
+  file: File;
+}): Promise<UploadedDocument> {
+  const { workspaceId, knowledgeBaseId, documentId, file } = params;
+  const { filename, mimeType, bytes } = await validateAndReadFile(file);
+
+  const existing = await findScopedDocument({
+    workspaceId,
+    knowledgeBaseId,
+    documentId,
+  });
+  if (!existing) {
+    throw new UploadError(404, "DOCUMENT_NOT_FOUND", "Document not found");
+  }
+  if (existing.status === "PROCESSING") {
+    throw new UploadError(
+      409,
+      "DOCUMENT_BUSY_PROCESSING",
+      "Document is currently being ingested",
+    );
+  }
+
+  const prevMeta = (existing.sourceMetadata ?? {}) as Record<string, unknown>;
+  const prevVersion =
+    typeof prevMeta.version === "number" &&
+    Number.isInteger(prevMeta.version) &&
+    prevMeta.version >= 1
+      ? prevMeta.version
+      : 1;
+  const nextVersion = prevVersion + 1;
+
+  const storage = getFileStorage();
+  const storagePath = await storage.put(workspaceId, documentId, bytes);
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(documents)
+      .set({
+        title: filename,
+        mimeType,
+        status: "PENDING",
+        updatedAt: new Date(),
+        sourceMetadata: {
+          ...prevMeta,
+          storage_path: storagePath,
+          original_filename: filename,
+          byte_size: bytes.byteLength,
+          version: nextVersion,
+        },
+      })
+      .where(
+        and(
+          eq(documents.id, documentId),
+          eq(documents.knowledgeBaseId, knowledgeBaseId),
+        ),
+      );
+
+    await tx.insert(ingestionJobs).values({
+      jobType: "INGEST_DOCUMENT",
+      documentId,
+      payload: { document_id: documentId },
+    });
+  });
+
+  return {
+    id: documentId,
+    title: filename,
+    mimeType,
+    status: "PENDING",
+    version: nextVersion,
+  };
+}
+
+/**
+ * Delete a single document (cascades to `document_chunks` and
+ * `ingestion_jobs`) and remove its stored file on a best-effort basis.
+ */
+export async function deleteDocument(params: {
+  workspaceId: string;
+  knowledgeBaseId: string;
+  documentId: string;
+}): Promise<{ id: string; title: string }> {
+  const { workspaceId, knowledgeBaseId, documentId } = params;
+  const existing = await findScopedDocument({
+    workspaceId,
+    knowledgeBaseId,
+    documentId,
+  });
+  if (!existing) {
+    throw new UploadError(404, "DOCUMENT_NOT_FOUND", "Document not found");
+  }
+  if (existing.status === "PROCESSING") {
+    throw new UploadError(
+      409,
+      "DOCUMENT_BUSY_PROCESSING",
+      "Document is currently being ingested",
+    );
+  }
+
+  const deleted = await db
+    .delete(documents)
+    .where(
+      and(
+        eq(documents.id, documentId),
+        eq(documents.knowledgeBaseId, knowledgeBaseId),
+      ),
+    )
+    .returning({ id: documents.id });
+  if (deleted.length === 0) {
+    throw new UploadError(404, "DOCUMENT_NOT_FOUND", "Document not found");
+  }
+
+  const storagePath = (existing.sourceMetadata as { storage_path?: unknown } | null)
+    ?.storage_path;
+  if (typeof storagePath === "string" && storagePath.length > 0) {
+    await getFileStorage()
+      .delete(storagePath)
+      .catch(() => {});
+  }
+
+  return { id: existing.id, title: existing.title };
+}
+
+/**
+ * Re-enqueue ingestion for a `FAILED` document without re-uploading its bytes.
+ */
+export async function retryDocumentIngestion(params: {
+  workspaceId: string;
+  knowledgeBaseId: string;
+  documentId: string;
+}): Promise<{ id: string; title: string; status: "PENDING" }> {
+  const { workspaceId, knowledgeBaseId, documentId } = params;
+  const existing = await findScopedDocument({
+    workspaceId,
+    knowledgeBaseId,
+    documentId,
+  });
+  if (!existing) {
+    throw new UploadError(404, "DOCUMENT_NOT_FOUND", "Document not found");
+  }
+  if (existing.status === "PROCESSING") {
+    throw new UploadError(
+      409,
+      "DOCUMENT_BUSY_PROCESSING",
+      "Document is currently being ingested",
+    );
+  }
+  if (existing.status !== "FAILED") {
+    throw new UploadError(
+      400,
+      "DOCUMENT_RETRY_NOT_ALLOWED",
+      "Only failed documents can be retried",
+    );
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(documents)
+      .set({ status: "PENDING", updatedAt: new Date() })
+      .where(
+        and(
+          eq(documents.id, documentId),
+          eq(documents.knowledgeBaseId, knowledgeBaseId),
+        ),
+      );
+
+    await tx.insert(ingestionJobs).values({
+      jobType: "INGEST_DOCUMENT",
+      documentId,
+      payload: { document_id: documentId },
+    });
+  });
+
+  return { id: existing.id, title: existing.title, status: "PENDING" };
 }

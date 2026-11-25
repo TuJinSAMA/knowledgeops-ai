@@ -157,3 +157,79 @@ def test_factory_builds_openrouter_when_key_present():
     assert isinstance(provider, OpenRouterEmbeddings)
     assert provider.dimensions == DIM
     assert provider.model == "qwen/qwen3-embedding-8b"
+
+
+def test_openrouter_uses_partial_batch_cache_and_deduplicates(monkeypatch):
+    from app.rag import embeddings as emb_mod
+
+    store: dict[str, list[float]] = {}
+
+    def fake_get_cached(texts, *, model, dimensions, redis_url):
+        assert redis_url == "redis://test:6379"
+        return {
+            i: store[t]
+            for i, t in enumerate(texts)
+            if t in store and len(store[t]) == dimensions
+        }
+
+    def fake_set_cached(items, *, model, dimensions, redis_url, ttl=0):
+        for text, vec in items:
+            store[text] = vec
+
+    monkeypatch.setattr(emb_mod, "get_cached_embeddings_sync", fake_get_cached)
+    monkeypatch.setattr(emb_mod, "set_cached_embeddings_sync", fake_set_cached)
+
+    cached_vec = FakeEmbeddings(dimensions=DIM).embed_texts(["cached-doc"])[0]
+    store["cached-doc"] = cached_vec
+
+    provider = OpenRouterEmbeddings(
+        dimensions=DIM,
+        model="qwen/qwen3-embedding-8b",
+        api_key="test-key",
+        base_url="https://openrouter.ai/api/v1",
+        redis_url="redis://test:6379",
+    )
+    recorder: dict = {}
+    monkeypatch.setattr(provider, "_client", _StubClient(recorder))
+
+    vectors = provider.embed_texts(["cached-doc", "fresh-doc", "fresh-doc"])
+    assert len(vectors) == 3
+    assert vectors[0] == cached_vec
+    assert vectors[1] == vectors[2]
+    # Only the single unique uncached text hit the upstream API.
+    assert recorder["inputs"] == ["fresh-doc"]
+
+    # Second call is 100% served from cache without touching the API.
+    recorder.clear()
+    second = provider.embed_texts(["cached-doc", "fresh-doc"])
+    assert second == [vectors[0], vectors[1]]
+    assert "inputs" not in recorder
+
+
+def test_sync_cache_degrades_gracefully_when_redis_unreachable(monkeypatch):
+    from app import cache as cache_mod
+
+    class _BrokenRedis:
+        def mget(self, keys):
+            raise RuntimeError("redis down")
+
+        def pipeline(self):
+            raise RuntimeError("redis down")
+
+    monkeypatch.setattr(cache_mod, "get_sync_redis", lambda url: _BrokenRedis())
+
+    provider = OpenRouterEmbeddings(
+        dimensions=DIM,
+        model="qwen/qwen3-embedding-8b",
+        api_key="test-key",
+        base_url="https://openrouter.ai/api/v1",
+        redis_url="redis://unreachable:6379",
+    )
+    recorder: dict = {}
+    monkeypatch.setattr(provider, "_client", _StubClient(recorder))
+
+    vectors = provider.embed_texts(["resilient-query"])
+    assert len(vectors) == 1
+    assert len(vectors[0]) == DIM
+    assert recorder["inputs"] == ["resilient-query"]
+

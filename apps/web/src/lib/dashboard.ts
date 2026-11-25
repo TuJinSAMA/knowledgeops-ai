@@ -1,4 +1,4 @@
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, gte, ne, sql } from "drizzle-orm";
 
 import { db } from "@/db";
 import {
@@ -204,5 +204,149 @@ export async function getDashboardMetrics(
     totalCost: traceStats.totalCost,
     feedback,
     recentRuns,
+  };
+}
+
+// ------------------------------------------------------------
+// Proactive Knowledge Gap Insights (Module 5B)
+// ------------------------------------------------------------
+
+export type RawRefusedTraceRow = {
+  id: string;
+  query: string;
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  createdAt: Date;
+};
+
+export type RefusedQueryCluster = {
+  normalizedQuery: string;
+  sampleQuery: string;
+  count: number;
+  knowledgeBaseId: string;
+  knowledgeBaseName: string;
+  latestTraceId: string;
+  lastSeenAt: Date;
+};
+
+export type KnowledgeGapSummary = {
+  windowDays: number;
+  totalRefusedCount: number;
+  unresolvedMissingKnowledgeCount: number;
+  topRefusedQueries: RefusedQueryCluster[];
+};
+
+/**
+ * Normalize a user question into a case/punctuation-insensitive clustering key
+ * (preserving CJK characters, ASCII alphanumerics, and single spaces).
+ */
+export function normalizeGapQueryKey(query: string): string {
+  return query
+    .trim()
+    .toLowerCase()
+    .replace(/[\p{P}\p{S}\s]+/gu, " ")
+    .trim();
+}
+
+/**
+ * Group recent refused trace rows (ordered newest-first) by knowledge base and
+ * normalized question text, returning the top-N highest-frequency blind spots.
+ */
+export function clusterRefusedTraces(
+  rows: RawRefusedTraceRow[],
+  limit = 8,
+): RefusedQueryCluster[] {
+  const clusters = new Map<string, RefusedQueryCluster>();
+
+  for (const row of rows) {
+    const normalized = normalizeGapQueryKey(row.query);
+    if (!normalized) {
+      continue;
+    }
+    const key = `${row.knowledgeBaseId}::${normalized}`;
+    const existing = clusters.get(key);
+    if (existing) {
+      existing.count += 1;
+      if (row.createdAt.getTime() > existing.lastSeenAt.getTime()) {
+        existing.lastSeenAt = row.createdAt;
+        existing.sampleQuery = row.query.trim();
+        existing.latestTraceId = row.id;
+      }
+    } else {
+      clusters.set(key, {
+        normalizedQuery: normalized,
+        sampleQuery: row.query.trim(),
+        count: 1,
+        knowledgeBaseId: row.knowledgeBaseId,
+        knowledgeBaseName: row.knowledgeBaseName,
+        latestTraceId: row.id,
+        lastSeenAt: row.createdAt,
+      });
+    }
+  }
+
+  return Array.from(clusters.values())
+    .sort(
+      (a, b) =>
+        b.count - a.count || b.lastSeenAt.getTime() - a.lastSeenAt.getTime(),
+    )
+    .slice(0, Math.max(1, limit));
+}
+
+/**
+ * Surface recent knowledge blind spots in a workspace:
+ *   1. Top repeated questions where the RAG assistant refused (`refused = true`)
+ *   2. Count of unresolved `MISSING_KNOWLEDGE` user feedback reports
+ * Strictly scoped by `workspaceId`.
+ */
+export async function getKnowledgeGaps(
+  workspaceId: string,
+  options?: { windowDays?: number; limit?: number },
+): Promise<KnowledgeGapSummary> {
+  const windowDays = Math.max(1, options?.windowDays ?? 30);
+  const limit = Math.max(1, options?.limit ?? 8);
+  const since = new Date(Date.now() - windowDays * 86_400_000);
+
+  const [refusedRows, missingFeedbackRows] = await Promise.all([
+    db
+      .select({
+        id: ragTraces.id,
+        query: ragTraces.query,
+        knowledgeBaseId: knowledgeBases.id,
+        knowledgeBaseName: knowledgeBases.name,
+        createdAt: ragTraces.createdAt,
+      })
+      .from(ragTraces)
+      .innerJoin(conversations, eq(conversations.id, ragTraces.conversationId))
+      .innerJoin(
+        knowledgeBases,
+        eq(knowledgeBases.id, conversations.knowledgeBaseId),
+      )
+      .where(
+        and(
+          eq(ragTraces.workspaceId, workspaceId),
+          eq(ragTraces.refused, true),
+          gte(ragTraces.createdAt, since),
+        ),
+      )
+      .orderBy(desc(ragTraces.createdAt))
+      .limit(500),
+    db
+      .select({ value: sql<number>`count(*)`.mapWith(Number) })
+      .from(answerFeedback)
+      .where(
+        and(
+          eq(answerFeedback.workspaceId, workspaceId),
+          eq(answerFeedback.reportType, "MISSING_KNOWLEDGE"),
+          ne(answerFeedback.reviewStatus, "RESOLVED"),
+        ),
+      ),
+  ]);
+
+  return {
+    windowDays,
+    totalRefusedCount: refusedRows.length,
+    unresolvedMissingKnowledgeCount: missingFeedbackRows[0]?.value ?? 0,
+    topRefusedQueries: clusterRefusedTraces(refusedRows, limit),
   };
 }

@@ -17,7 +17,15 @@ import {
   deleteEvaluationCase,
   deleteEvaluationDataset,
   type EvaluationRunConfig,
+  getEvaluationDataset,
+  getEvaluationRun,
+  updateEvaluationCase,
 } from "./evaluation";
+import {
+  getKnowledgeBase,
+  updateKnowledgeBaseRagConfig,
+} from "./knowledge-base";
+import { parseRagConfigFromFormData, sanitizeRagConfig } from "./rag-config";
 
 export type { ActionState } from "./action-errors";
 
@@ -35,18 +43,14 @@ function parseList(raw: FormDataEntryValue | null): string[] | null {
   return items.length > 0 ? items : null;
 }
 
-function parsePositiveInt(
-  raw: FormDataEntryValue | null,
-): number | undefined {
-  const text = String(raw ?? "").trim();
-  if (!text) {
-    return undefined;
-  }
-  const parsed = Number.parseInt(text, 10);
-  if (Number.isNaN(parsed) || parsed <= 0) {
-    return undefined;
-  }
-  return parsed;
+function parseCombinedDocumentIds(formData: FormData): string[] | null {
+  const checked = formData
+    .getAll("selectedDocumentIds")
+    .map((v) => String(v).trim())
+    .filter(Boolean);
+  const manual = parseList(formData.get("expectedSourceDocuments")) ?? [];
+  const merged = [...new Set([...checked, ...manual])];
+  return merged.length > 0 ? merged : null;
 }
 
 async function resolveWorkspaceId(
@@ -153,7 +157,7 @@ export async function createEvaluationCaseAction(
     created = await createEvaluationCase(resolved.workspaceId, datasetId, {
       question,
       expectedAnswer: String(formData.get("expectedAnswer") ?? "").trim() || null,
-      expectedSourceDocuments: parseList(formData.get("expectedSourceDocuments")),
+      expectedSourceDocuments: parseCombinedDocumentIds(formData),
       expectedChunks: parseList(formData.get("expectedChunks")),
       requiredFacts: parseList(formData.get("requiredFacts")),
       tags: parseList(formData.get("tags")),
@@ -168,7 +172,66 @@ export async function createEvaluationCaseAction(
   revalidatePath(
     await withLocalePath(`/${workspaceSlug}/evaluations/${datasetId}`),
   );
-  return {};
+  return { ok: true };
+}
+
+/**
+ * Update an existing evaluation case in-place, preserving its `id` and any
+ * linked feedback/trace provenance. Requires ADMIN or higher.
+ */
+export async function updateEvaluationCaseAction(
+  workspaceSlug: string,
+  datasetId: string,
+  caseId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  const question = String(formData.get("question") ?? "").trim();
+  if (!question) {
+    return { errorCode: "EVALUATION_CASE_QUESTION_REQUIRED" };
+  }
+
+  const resolved = await resolveWorkspaceId(workspaceSlug);
+  if ("errorCode" in resolved) {
+    return resolved;
+  }
+
+  let updated;
+  try {
+    updated = await updateEvaluationCase(
+      resolved.workspaceId,
+      datasetId,
+      caseId,
+      {
+        question,
+        expectedAnswer:
+          String(formData.get("expectedAnswer") ?? "").trim() || null,
+        expectedSourceDocuments: parseCombinedDocumentIds(formData),
+        expectedChunks: parseList(formData.get("expectedChunks")),
+        requiredFacts: parseList(formData.get("requiredFacts")),
+        tags: parseList(formData.get("tags")),
+      },
+    );
+  } catch {
+    return { errorCode: "EVALUATION_CASE_UPDATE_FAILED" };
+  }
+
+  if (!updated) {
+    return { errorCode: "EVALUATION_CASE_NOT_FOUND" };
+  }
+
+  await recordAudit({
+    workspaceId: resolved.workspaceId,
+    actorId: resolved.actorId,
+    action: AUDIT_ACTIONS.EVALUATION_CASE_UPDATE,
+    target: { type: "evaluation_case", id: caseId },
+    metadata: { dataset_id: datasetId },
+  });
+
+  revalidatePath(
+    await withLocalePath(`/${workspaceSlug}/evaluations/${datasetId}`),
+  );
+  return { ok: true };
 }
 
 /**
@@ -215,46 +278,17 @@ export async function triggerEvaluationRunAction(
   _prev: ActionState,
   formData: FormData,
 ): Promise<ActionState> {
+  const parsed = parseRagConfigFromFormData(formData);
+  if ("errorCode" in parsed) {
+    return { errorCode: parsed.errorCode };
+  }
+
   const resolved = await resolveWorkspaceId(workspaceSlug);
   if ("errorCode" in resolved) {
     return resolved;
   }
 
-  const config: EvaluationRunConfig = {};
-  const chunkSize = parsePositiveInt(formData.get("chunkSize"));
-  if (chunkSize !== undefined) {
-    config.chunkSize = chunkSize;
-  }
-  const topK = parsePositiveInt(formData.get("topK"));
-  if (topK !== undefined) {
-    config.topK = topK;
-  }
-  const retrievalMode = String(formData.get("retrievalMode") ?? "").trim();
-  if (
-    retrievalMode === "hybrid" ||
-    retrievalMode === "vector" ||
-    retrievalMode === "keyword"
-  ) {
-    config.retrievalMode = retrievalMode;
-  }
-  const queryRewrite = String(formData.get("queryRewrite") ?? "").trim();
-  if (queryRewrite === "true") {
-    config.queryRewrite = true;
-  } else if (queryRewrite === "false") {
-    config.queryRewrite = false;
-  }
-  const embeddingModel = String(formData.get("embeddingModel") ?? "").trim();
-  if (embeddingModel) {
-    config.embeddingModel = embeddingModel;
-  }
-  const reranker = String(formData.get("reranker") ?? "").trim();
-  if (reranker) {
-    config.reranker = reranker;
-  }
-  const promptVersion = String(formData.get("promptVersion") ?? "").trim();
-  if (promptVersion) {
-    config.promptVersion = promptVersion;
-  }
+  const config: EvaluationRunConfig = { ...parsed.config };
   const useLlmJudge = String(formData.get("useLlmJudge") ?? "").trim();
   if (useLlmJudge === "on" || useLlmJudge === "true") {
     config.useLlmJudge = true;
@@ -280,4 +314,84 @@ export async function triggerEvaluationRunAction(
       `/${workspaceSlug}/evaluations/${datasetId}/runs/${run.id}`,
     ),
   );
+}
+
+/**
+ * Promote a completed evaluation run's runtime RAG configuration to be the
+ * live configuration on the dataset's bound knowledge base. Strips
+ * evaluation-only flags (`useLlmJudge`) and records an audit entry.
+ */
+export async function promoteEvaluationRunConfigAction(
+  workspaceSlug: string,
+  datasetId: string,
+  runId: string,
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  void formData;
+  const resolved = await resolveWorkspaceId(workspaceSlug);
+  if ("errorCode" in resolved) {
+    return resolved;
+  }
+
+  const [dataset, run] = await Promise.all([
+    getEvaluationDataset(resolved.workspaceId, datasetId),
+    getEvaluationRun(resolved.workspaceId, runId),
+  ]);
+  if (!dataset) {
+    return { errorCode: "DATASET_NOT_FOUND" };
+  }
+  if (!run || run.datasetId !== datasetId) {
+    return { errorCode: "EVALUATION_RUN_NOT_FOUND" };
+  }
+  if (!dataset.knowledgeBaseId) {
+    return { errorCode: "DATASET_NO_KNOWLEDGE_BASE" };
+  }
+
+  const kb = await getKnowledgeBase(
+    resolved.workspaceId,
+    dataset.knowledgeBaseId,
+  );
+  if (!kb) {
+    return { errorCode: "KNOWLEDGE_BASE_NOT_FOUND" };
+  }
+
+  const sanitized = sanitizeRagConfig(run.config);
+  const nextConfig = Object.keys(sanitized).length > 0 ? sanitized : null;
+  const updated = await updateKnowledgeBaseRagConfig(
+    resolved.workspaceId,
+    kb.id,
+    nextConfig,
+  );
+  if (!updated) {
+    return { errorCode: "KNOWLEDGE_BASE_NOT_FOUND" };
+  }
+
+  await recordAudit({
+    workspaceId: resolved.workspaceId,
+    actorId: resolved.actorId,
+    action: AUDIT_ACTIONS.KNOWLEDGE_BASE_UPDATE_CONFIG,
+    target: { type: "knowledge_base", id: kb.id },
+    metadata: {
+      name: kb.name,
+      previous_config: kb.ragConfig ?? null,
+      next_config: nextConfig,
+      source: "evaluation_run",
+      dataset_id: dataset.id,
+      run_id: run.id,
+    },
+  });
+
+  const [datasetPath, runPath, comparePath, kbPath] = await Promise.all([
+    withLocalePath(`/${workspaceSlug}/evaluations/${datasetId}`),
+    withLocalePath(`/${workspaceSlug}/evaluations/${datasetId}/runs/${runId}`),
+    withLocalePath(`/${workspaceSlug}/evaluations/${datasetId}/compare`),
+    withLocalePath(`/${workspaceSlug}/knowledge-bases/${kb.id}`),
+  ]);
+  revalidatePath(datasetPath);
+  revalidatePath(runPath);
+  revalidatePath(comparePath);
+  revalidatePath(kbPath);
+
+  return { ok: true };
 }

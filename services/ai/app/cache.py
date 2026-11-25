@@ -16,11 +16,13 @@ import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
 
+import redis
 import redis.asyncio as aioredis
 
 logger = logging.getLogger(__name__)
 
 _redis_client: aioredis.Redis | None = None
+_sync_redis_clients: dict[str, redis.Redis] = {}
 
 KEY_PREFIX = "knowledgeops"
 
@@ -181,3 +183,83 @@ async def cached[T](
     except Exception:  # noqa: BLE001
         pass
     return value
+
+
+# ---------------------------------------------------------------------------
+# Synchronous batch embedding cache (used by sync retrieval & worker threads)
+# ---------------------------------------------------------------------------
+
+
+def get_sync_redis(url: str) -> redis.Redis:
+    """Return a lazily-created synchronous Redis client for ``url``."""
+    client = _sync_redis_clients.get(url)
+    if client is None:
+        client = redis.Redis.from_url(
+            url,
+            encoding="utf-8",
+            decode_responses=True,
+            socket_connect_timeout=1.0,
+            socket_timeout=1.0,
+        )
+        _sync_redis_clients[url] = client
+    return client
+
+
+def embedding_vector_cache_key(text: str, model: str, dimensions: int) -> str:
+    return _build_key("embedding", model, str(dimensions), _hash(text))
+
+
+def get_cached_embeddings_sync(
+    texts: list[str],
+    *,
+    model: str,
+    dimensions: int,
+    redis_url: str,
+) -> dict[int, list[float]]:
+    """Fetch cached embeddings for ``texts`` in one MGET round-trip.
+
+    Returns a mapping ``{input_index: vector}`` for valid cache hits. Any Redis
+    or deserialization failure degrades gracefully to ``{}`` (cache miss).
+    """
+    if not texts or not redis_url:
+        return {}
+    keys = [embedding_vector_cache_key(t, model, dimensions) for t in texts]
+    try:
+        raw_values = get_sync_redis(redis_url).mget(keys)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[cache] sync embedding mget failed: %s", exc)
+        return {}
+
+    hits: dict[int, list[float]] = {}
+    for idx, raw in enumerate(raw_values):
+        if not raw:
+            continue
+        try:
+            vec = json.loads(raw)
+            if isinstance(vec, list) and len(vec) == dimensions:
+                hits[idx] = vec
+        except Exception:  # noqa: BLE001
+            continue
+    return hits
+
+
+def set_cached_embeddings_sync(
+    items: list[tuple[str, list[float]]],
+    *,
+    model: str,
+    dimensions: int,
+    redis_url: str,
+    ttl: int = TTL_EMBEDDING,
+) -> None:
+    """Pipeline-write newly computed embeddings to Redis (best-effort)."""
+    if not items or not redis_url:
+        return
+    try:
+        pipe = get_sync_redis(redis_url).pipeline()
+        for text, vec in items:
+            key = embedding_vector_cache_key(text, model, dimensions)
+            pipe.setex(key, ttl, json.dumps(vec))
+        pipe.execute()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[cache] sync embedding pipeline set failed: %s", exc)
+

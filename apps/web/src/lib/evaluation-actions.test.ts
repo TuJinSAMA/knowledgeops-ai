@@ -24,21 +24,39 @@ vi.mock("./authz", () => ({
 const createEvaluationDatasetMock = vi.fn();
 const deleteEvaluationDatasetMock = vi.fn();
 const createEvaluationCaseMock = vi.fn();
+const updateEvaluationCaseMock = vi.fn();
 const deleteEvaluationCaseMock = vi.fn();
 const createEvaluationRunMock = vi.fn();
+const getEvaluationDatasetMock = vi.fn();
+const getEvaluationRunMock = vi.fn();
 vi.mock("./evaluation", () => ({
   createEvaluationDataset: (...args: unknown[]) =>
     createEvaluationDatasetMock(...args),
   deleteEvaluationDataset: (...args: unknown[]) =>
     deleteEvaluationDatasetMock(...args),
   createEvaluationCase: (...args: unknown[]) => createEvaluationCaseMock(...args),
+  updateEvaluationCase: (...args: unknown[]) => updateEvaluationCaseMock(...args),
   deleteEvaluationCase: (...args: unknown[]) => deleteEvaluationCaseMock(...args),
   createEvaluationRun: (...args: unknown[]) => createEvaluationRunMock(...args),
+  getEvaluationDataset: (...args: unknown[]) => getEvaluationDatasetMock(...args),
+  getEvaluationRun: (...args: unknown[]) => getEvaluationRunMock(...args),
+}));
+
+const getKnowledgeBaseMock = vi.fn();
+const updateKnowledgeBaseRagConfigMock = vi.fn();
+vi.mock("./knowledge-base", () => ({
+  getKnowledgeBase: (...args: unknown[]) => getKnowledgeBaseMock(...args),
+  updateKnowledgeBaseRagConfig: (...args: unknown[]) =>
+    updateKnowledgeBaseRagConfigMock(...args),
 }));
 
 const recordAuditMock = vi.fn();
 vi.mock("./audit", () => ({
-  AUDIT_ACTIONS: { EVALUATION_RUN_TRIGGER: "evaluation-run.trigger" },
+  AUDIT_ACTIONS: {
+    EVALUATION_RUN_TRIGGER: "evaluation-run.trigger",
+    EVALUATION_CASE_UPDATE: "evaluation-case.update",
+    KNOWLEDGE_BASE_UPDATE_CONFIG: "knowledge-base.update-config",
+  },
   recordAudit: (...args: unknown[]) => recordAuditMock(...args),
 }));
 
@@ -57,7 +75,9 @@ import {
   createEvaluationDatasetAction,
   deleteEvaluationCaseAction,
   deleteEvaluationDatasetAction,
+  promoteEvaluationRunConfigAction,
   triggerEvaluationRunAction,
+  updateEvaluationCaseAction,
 } from "./evaluation-actions";
 
 const SLUG = "acme";
@@ -267,8 +287,47 @@ describe("deleteEvaluationCaseAction", () => {
   });
 });
 
+describe("updateEvaluationCaseAction", () => {
+  it("merges selectedDocumentIds checkboxes with manual IDs, updates in-place, and records audit", async () => {
+    updateEvaluationCaseMock.mockResolvedValue({ id: CASE_ID });
+    const fd = formDataOf({
+      question: "Updated question?",
+      expectedAnswer: "Updated answer",
+      expectedSourceDocuments: "doc-manual",
+    });
+    fd.append("selectedDocumentIds", "doc-picker-1");
+    fd.append("selectedDocumentIds", "doc-manual"); // deduplicated
+
+    const result = await updateEvaluationCaseAction(
+      SLUG,
+      DATASET_ID,
+      CASE_ID,
+      {},
+      fd,
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(updateEvaluationCaseMock).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      DATASET_ID,
+      CASE_ID,
+      expect.objectContaining({
+        question: "Updated question?",
+        expectedAnswer: "Updated answer",
+        expectedSourceDocuments: ["doc-picker-1", "doc-manual"],
+      }),
+    );
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: "evaluation-case.update",
+        target: { type: "evaluation_case", id: CASE_ID },
+      }),
+    );
+  });
+});
+
 describe("triggerEvaluationRunAction", () => {
-  it("requires ADMIN and enqueues a run with the parsed config", async () => {
+  it("requires ADMIN and enqueues a run with the parsed runtime RAG config", async () => {
     await expect(
       triggerEvaluationRunAction(
         SLUG,
@@ -276,11 +335,11 @@ describe("triggerEvaluationRunAction", () => {
         {},
         formDataOf({
           topK: "8",
-          chunkSize: "500",
-          promptVersion: "v2",
+          minScore: "0.35",
           retrievalMode: "hybrid",
           queryRewrite: "true",
           reranker: "heuristic",
+          systemPromptAddendum: "Keep answers short.",
           useLlmJudge: "on",
         }),
       ),
@@ -289,16 +348,27 @@ describe("triggerEvaluationRunAction", () => {
     expect(requireWorkspaceMemberBySlugMock).toHaveBeenCalledWith(SLUG, "ADMIN");
     expect(createEvaluationRunMock).toHaveBeenCalledWith(WORKSPACE_ID, DATASET_ID, {
       topK: 8,
-      chunkSize: 500,
-      promptVersion: "v2",
+      minScore: 0.35,
       retrievalMode: "hybrid",
       queryRewrite: true,
       reranker: "heuristic",
+      systemPromptAddendum: "Keep answers short.",
       useLlmJudge: true,
     });
     expect(redirectMock).toHaveBeenCalledWith(
       `/${SLUG}/evaluations/${DATASET_ID}/runs/${RUN_ID}`,
     );
+  });
+
+  it("rejects invalid runtime config before touching the guard", async () => {
+    const result = await triggerEvaluationRunAction(
+      SLUG,
+      DATASET_ID,
+      {},
+      formDataOf({ minScore: "1.8" }),
+    );
+    expect(result.errorCode).toBe("RAG_CONFIG_INVALID");
+    expect(requireWorkspaceMemberBySlugMock).not.toHaveBeenCalled();
   });
 
   it("rejects a caller below ADMIN without enqueuing", async () => {
@@ -325,5 +395,107 @@ describe("triggerEvaluationRunAction", () => {
     );
     expect(result.errorCode).toBe("DATASET_NOT_FOUND");
     expect(redirectMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("promoteEvaluationRunConfigAction", () => {
+  beforeEach(() => {
+    getEvaluationDatasetMock.mockResolvedValue({
+      id: DATASET_ID,
+      knowledgeBaseId: "kb-1",
+    });
+    getEvaluationRunMock.mockResolvedValue({
+      id: RUN_ID,
+      datasetId: DATASET_ID,
+      status: "COMPLETED",
+      config: {
+        topK: 6,
+        retrievalMode: "hybrid",
+        minScore: 0.4,
+        reranker: "heuristic",
+        useLlmJudge: true,
+      },
+    });
+    getKnowledgeBaseMock.mockResolvedValue({
+      id: "kb-1",
+      name: "Support Docs",
+      ragConfig: { topK: 4 },
+    });
+    updateKnowledgeBaseRagConfigMock.mockResolvedValue(true);
+  });
+
+  it("promotes sanitized runtime config (stripping useLlmJudge) and records audit", async () => {
+    const result = await promoteEvaluationRunConfigAction(
+      SLUG,
+      DATASET_ID,
+      RUN_ID,
+      {},
+      new FormData(),
+    );
+
+    expect(result).toEqual({ ok: true });
+    expect(requireWorkspaceMemberBySlugMock).toHaveBeenCalledWith(SLUG, "ADMIN");
+    expect(updateKnowledgeBaseRagConfigMock).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      "kb-1",
+      {
+        topK: 6,
+        retrievalMode: "hybrid",
+        minScore: 0.4,
+        reranker: "heuristic",
+      },
+    );
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: WORKSPACE_ID,
+        actorId: "user-1",
+        action: "knowledge-base.update-config",
+        target: { type: "knowledge_base", id: "kb-1" },
+        metadata: expect.objectContaining({
+          source: "evaluation_run",
+          run_id: RUN_ID,
+          dataset_id: DATASET_ID,
+          previous_config: { topK: 4 },
+        }),
+      }),
+    );
+  });
+
+  it("returns DATASET_NO_KNOWLEDGE_BASE when dataset has no bound knowledge base", async () => {
+    getEvaluationDatasetMock.mockResolvedValue({
+      id: DATASET_ID,
+      knowledgeBaseId: null,
+    });
+
+    const result = await promoteEvaluationRunConfigAction(
+      SLUG,
+      DATASET_ID,
+      RUN_ID,
+      {},
+      new FormData(),
+    );
+
+    expect(result.errorCode).toBe("DATASET_NO_KNOWLEDGE_BASE");
+    expect(updateKnowledgeBaseRagConfigMock).not.toHaveBeenCalled();
+  });
+
+  it("returns EVALUATION_RUN_NOT_FOUND when run belongs to a different dataset", async () => {
+    getEvaluationRunMock.mockResolvedValue({
+      id: RUN_ID,
+      datasetId: "other-ds",
+      status: "COMPLETED",
+      config: {},
+    });
+
+    const result = await promoteEvaluationRunConfigAction(
+      SLUG,
+      DATASET_ID,
+      RUN_ID,
+      {},
+      new FormData(),
+    );
+
+    expect(result.errorCode).toBe("EVALUATION_RUN_NOT_FOUND");
+    expect(updateKnowledgeBaseRagConfigMock).not.toHaveBeenCalled();
   });
 });

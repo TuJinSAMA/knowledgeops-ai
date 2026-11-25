@@ -57,7 +57,16 @@
     "helpful": "有帮助",
     "notHelpful": "没有帮助",
     "auditPrompt": "需要查看活动记录？",
-    "openAudit": "打开审计日志"
+    "openAudit": "打开审计日志",
+    "knowledgeGaps": {
+      "title": "知识缺口洞察",
+      "subtitle": "自动聚合近 {days} 天内助手因资料不足拒绝回答的高频问题，帮您主动发现并补齐知识盲区。",
+      "refusedCount": "{count} 次拒答",
+      "missingReports": "{count} 条待处理缺资料反馈",
+      "none": "近 30 天内未检测到资料不足拒答，知识覆盖状况良好。",
+      "inspectTrace": "查看追踪",
+      "uploadDocs": "补充文档 →"
+    }
   },
   "chat": {
     "title": "助手",
@@ -113,17 +122,54 @@
     "delete": "删除知识库",
     "upload": "上传文档",
     "acceptedFiles": "Markdown、纯文本或 PDF。",
+    "acceptedFilesBatch": "支持批量选择或拖拽上传 Markdown (.md)、纯文本 (.txt) 或 PDF (.pdf)。",
     "uploading": "正在上传…",
+    "uploadingBatch": "正在上传（{current}/{total}）…",
     "uploadFailed": "上传失败，请重试。",
     "uploadFailedStatus": "上传失败（{status}）",
+    "actionFailed": "操作失败，请重试。",
     "refresh": "刷新",
     "noDocuments": "暂无文档。",
     "chunks": "{count, plural, =1 {# 个分块} other {# 个分块}}",
+    "inspectChunks": "分块详情",
+    "retryIngest": "重试摄取",
+    "replaceDoc": "更新版本",
+    "deleteDoc": "删除",
+    "deleteDocConfirm": "确定删除文档“{title}”及其全部分块吗？此操作无法撤销。",
+    "chunkInspector": {
+      "updatedAt": "最近更新于 {date}",
+      "mimeType": "文件类型",
+      "fileSize": "文件大小",
+      "totalChunks": "总分块数",
+      "totalTokens": "估算总 Token",
+      "searchPlaceholder": "在分块内容中搜索关键词…",
+      "search": "搜索分块",
+      "clearSearch": "清除过滤",
+      "chunksHeading": "文档分块列表（{count}）",
+      "matchingChunks": "匹配分块（{matched} / {total}）",
+      "noMatchingChunks": "没有分块匹配当前搜索词。",
+      "emptyChunks": "该文档未生成任何分块。",
+      "pendingIngestion": "文档正在等待或执行后台摄取，完成后分块将在此显示。",
+      "tokens": "{count} tokens",
+      "copyId": "ID",
+      "copied": "已复制"
+    },
     "status": {
       "PENDING": "等待处理",
       "PROCESSING": "处理中",
       "INGESTED": "已摄取",
       "FAILED": "失败"
+    },
+    "ragConfig": {
+      "title": "线上 RAG 配置",
+      "description": "此知识库在实时对话中生效的检索与生成参数。您也可以从评估运行详情或对比页一键发布胜出配置。",
+      "customActive": "已启用自定义配置",
+      "systemDefault": "系统默认配置",
+      "inheritDefault": "跟随系统默认",
+      "save": "保存线上配置",
+      "saving": "正在保存…",
+      "resetDefaults": "恢复系统默认",
+      "saved": "已保存"
     }
   },
   "evaluations": {
@@ -185,6 +231,7 @@
     "runDescription": "使用 RAG 配置运行此数据集。运行将进入评估 worker 队列，该 worker 会评估每个用例并报告逐用例和汇总指标。",
     "chunkSize": "分块大小",
     "topK": "Top-k",
+    "minScore": "相关性拒答阈值（Min Score, 0–1）",
     "retrievalMode": "检索模式",
     "retrievalModeHybrid": "混合检索（向量 + 关键词 RRF）",
     "retrievalModeVector": "仅稠密向量检索",
@@ -199,7 +246,15 @@
     "rerankerHeuristic": "混合特征精排（Heuristic Reranker）",
     "rerankerLlm": "大模型重排（LLM Reranker）",
     "promptVersion": "Prompt 版本",
+    "systemPromptAddendum": "领域附加指令（System Prompt Addendum）",
+    "systemPromptAddendumPlaceholder": "例如：使用简洁的项目符号回答；若资料未提及报价，请引导联系 sales@acme.example。",
     "useLlmJudge": "启用 LLM-as-a-Judge 语义评分与评语诊断",
+    "liveBadge": "线上生效中",
+    "liveDeployment": "线上配置状态",
+    "liveOnKnowledgeBase": "已在“{name}”线上生效",
+    "promoteConfigButton": "发布为“{name}”线上配置",
+    "promoteConfigConfirm": "确定将此次运行的 RAG 配置发布为知识库“{name}”的线上生效配置吗？实时对话将立即采用新配置。",
+    "promotingConfig": "正在发布…",
     "addCaseBeforeRun": "运行评估前请至少添加一个用例",
     "queuing": "正在入队…",
     "runEvaluation": "运行评估",
@@ -289,11 +344,32 @@
   "traces": {
     "title": "回答追踪", "description": "每个回答都会记录追踪：检索命中、发送给模型的上下文、Token 用量、预估成本、延迟和错误。",
     "none": "暂未生成追踪。向助手提问即可生成一条。", "query": "查询", "model": "模型", "latency": "延迟", "cost": "成本", "when": "时间",
-    "empty": "（空）", "error": "错误", "back": "← 全部追踪", "detail": "回答追踪", "question": "问题", "rewrittenQuery": "改写后检索词",
+    "empty": "（空）", "error": "错误", "refusedShort": "已拒答", "refusedBadge": "已拒答 · 资料不足", "back": "← 全部追踪", "detail": "回答追踪", "question": "问题", "rewrittenQuery": "改写后检索词",
     "totalTokens": "总 Token 数", "estimatedCost": "预估成本", "promptTokens": "Prompt Token 数", "completionTokens": "完成 Token 数",
     "stageLatency": "{name} 延迟", "retrievedChunks": "已检索分块（{count}）",
     "noChunks": "没有分块通过相关性阈值——助手可能已拒绝回答。", "document": "【{index}】文档", "chunk": "分块 #{index}",
-    "score": "综合分 {score}", "vectorScore": "向量分 {score}", "keywordScore": "关键词分 {score}", "finalContext": "发送给模型的最终上下文", "noContext": "未构建上下文（拒答或错误）。", "response": "模型回答"
+    "score": "综合分 {score}", "vectorScore": "向量分 {score}", "keywordScore": "关键词分 {score}", "finalContext": "发送给模型的最终上下文", "noContext": "未构建上下文（拒答或错误）。", "response": "模型回答",
+    "filters": {
+      "knowledgeBase": "知识库",
+      "all": "全部",
+      "status": "状态",
+      "statusLabels": {
+        "ALL": "全部状态",
+        "OK": "正常回答",
+        "REFUSED": "已拒答（资料不足）",
+        "ERROR": "发生错误"
+      },
+      "minLatency": "延迟阈值",
+      "anyLatency": "不限延迟",
+      "search": "关键词搜索",
+      "searchPlaceholder": "搜索问题或改写词…",
+      "apply": "筛选",
+      "reset": "重置",
+      "noMatches": "没有符合当前筛选条件的追踪记录。",
+      "paginationSummary": "显示第 {from}–{to} 条，共 {total} 条追踪",
+      "prevPage": "← 上一页",
+      "nextPage": "下一页 →"
+    }
   },
   "usage": {
     "title": "用量与配额", "description": "此工作区每日和每月上限下的 Token 消耗，以及所有回答的累计成本。",
@@ -314,10 +390,10 @@
     "none": "暂无审计记录。", "target": "目标", "actor": "操作者", "when": "时间", "unknown": "未知",
     "actionLabels": {
       "knowledge-base": {
-        "create": "已创建知识库", "delete": "已删除知识库"
+        "create": "已创建知识库", "delete": "已删除知识库", "update-config": "已更新知识库线上配置"
       },
       "document": {
-        "upload": "已上传文档", "delete": "已删除文档"
+        "upload": "已上传文档", "replace": "已更新文档版本", "retry-ingest": "已重试文档摄取", "delete": "已删除文档"
       },
       "member": {
         "role-update": "已更新成员角色", "remove": "已移除成员"
@@ -344,8 +420,11 @@
     "WORKSPACE_NAME_REQUIRED": "工作区名称不能为空。",
     "KNOWLEDGE_BASE_NAME_REQUIRED": "知识库名称不能为空。",
     "KNOWLEDGE_BASE_NOT_FOUND": "未找到知识库。",
+    "RAG_CONFIG_INVALID": "RAG 配置参数超出有效范围（Top-k 需为 1–20，拒答阈值需为 0–1，附加指令不超过 1,000 字符）。",
     "DATASET_NAME_REQUIRED": "数据集名称不能为空。",
     "DATASET_NOT_FOUND": "未找到数据集。",
+    "DATASET_NO_KNOWLEDGE_BASE": "此数据集未关联知识库，无法发布线上配置。",
+    "EVALUATION_RUN_NOT_FOUND": "未找到评估运行。",
     "EVALUATION_CASE_QUESTION_REQUIRED": "问题不能为空。",
     "EVALUATION_CASE_NOT_FOUND": "未找到评估用例。",
     "EVALUATION_CREATE_FAILED": "创建数据集失败。",
@@ -361,6 +440,9 @@
     "UPLOAD_FILE_MISSING": "请选择要上传的文件。",
     "UPLOAD_UNSUPPORTED_TYPE": "不支持的文件类型。仅支持 Markdown (.md)、纯文本 (.txt) 或 PDF (.pdf)。",
     "UPLOAD_FILE_EMPTY": "文件内容为空。",
-    "UPLOAD_FILE_TOO_LARGE": "文件大小超出允许的上传上限。"
+    "UPLOAD_FILE_TOO_LARGE": "文件大小超出允许的上传上限。",
+    "DOCUMENT_NOT_FOUND": "未找到目标文档。",
+    "DOCUMENT_BUSY_PROCESSING": "该文档正在后台摄取处理中，请稍候再试。",
+    "DOCUMENT_RETRY_NOT_ALLOWED": "仅摄取失败的文档可以执行重试。"
   }
 }

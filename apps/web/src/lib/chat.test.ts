@@ -335,6 +335,48 @@ describe("handleChat happy path streaming", () => {
     expect(res.status).toBe(404);
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("loads and forwards the knowledge base's live ragConfig to POST /v1/answer", async () => {
+    getKnowledgeBaseMock.mockResolvedValue({
+      id: KB_ID,
+      name: "Docs",
+      ragConfig: {
+        topK: 6,
+        retrievalMode: "hybrid",
+        minScore: 0.42,
+        queryRewrite: true,
+        reranker: "heuristic",
+        systemPromptAddendum: "Answer in bullet points.",
+      },
+    });
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(sseBody('event: done\ndata: {"answer": "ok"}\n\n'), {
+        status: 200,
+      }),
+    );
+
+    const res = await handleChat(SLUG, {
+      knowledgeBaseId: KB_ID,
+      query: "How much is Pro?",
+    });
+    await readAll(res.body);
+
+    expect(res.status).toBe(200);
+    const fetchBody = JSON.parse(
+      (
+        (globalThis.fetch as unknown as ReturnType<typeof vi.fn>).mock
+          .calls[0][1] as RequestInit
+      ).body as string,
+    );
+    expect(fetchBody.config).toEqual({
+      topK: 6,
+      retrievalMode: "hybrid",
+      minScore: 0.42,
+      queryRewrite: true,
+      reranker: "heuristic",
+      systemPromptAddendum: "Answer in bullet points.",
+    });
+  });
 });
 
 describe("handleChat trace observability", () => {
@@ -356,7 +398,29 @@ describe("handleChat trace observability", () => {
     expect(createTraceMock).toHaveBeenCalledTimes(1);
     const trace = createTraceMock.mock.calls[0][0];
     expect(trace.finalContext).toBe("ctx");
+    expect(trace.refused).toBe(false);
     expect(trace.stageLatencyMs).toMatchObject({ retrieve: 1.5, generate: 2.5 });
+  });
+
+  it("persists refused=true on the trace when the assistant refuses", async () => {
+    const upstream =
+      'event: done\ndata: {"answer": "资料不足", "refused": true, "model": "fake-llm", "citations": []}\n\n';
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(sseBody(upstream), { status: 200 }),
+    );
+
+    const res = await handleChat(SLUG, {
+      knowledgeBaseId: KB_ID,
+      query: "年假有几天？",
+    });
+    await readAll(res.body);
+
+    expect(createTraceMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        refused: true,
+        response: "资料不足",
+      }),
+    );
   });
 
   it("records a trace (with error, no assistant message) when the AI stream errors", async () => {

@@ -10,6 +10,7 @@ import {
 import { getKnowledgeBase } from "@/lib/knowledge-base";
 import { estimateCost } from "@/lib/pricing";
 import { assertWithinQuota, incrementUsage, QuotaExceededError } from "@/lib/quota";
+import { sanitizeRagConfig } from "@/lib/rag-config";
 import { createTrace } from "@/lib/trace";
 import { env } from "@/env";
 
@@ -147,6 +148,7 @@ export async function handleChat(
   // source of truth for its knowledge base; a new one needs an explicit kb.
   let conversationId: string;
   let knowledgeBaseId: string;
+  let liveRagConfig: Record<string, unknown> = {};
   let history: Array<{ role: string; content: string }> = [];
 
   if (body.conversationId) {
@@ -156,6 +158,11 @@ export async function handleChat(
     }
     conversationId = conversation.id;
     knowledgeBaseId = conversation.knowledgeBaseId;
+    const kb = await getKnowledgeBase(workspaceId, knowledgeBaseId);
+    if (!kb) {
+      return jsonError("Knowledge base not found", 404);
+    }
+    liveRagConfig = sanitizeRagConfig(kb.ragConfig);
     const prior = await listMessages(conversationId);
     history = prior.slice(-6).map((m) => ({
       role: m.role.toLowerCase(),
@@ -170,6 +177,7 @@ export async function handleChat(
       return jsonError("Knowledge base not found", 404);
     }
     knowledgeBaseId = kb.id;
+    liveRagConfig = sanitizeRagConfig(kb.ragConfig);
     const created = await createConversation({
       workspaceId,
       knowledgeBaseId,
@@ -182,9 +190,9 @@ export async function handleChat(
   // Persist the user's turn before calling the AI service.
   await addMessage({ conversationId, role: "USER", content: query });
 
-  // Retrieval config sent to the AI service (empty = AI service defaults).
+  // Load the knowledge base's promoted live RAG config (empty = AI service defaults).
   // Recorded verbatim on the trace so a turn is reproducible.
-  const retrievalConfig: Record<string, unknown> = {};
+  const retrievalConfig: Record<string, unknown> = { ...liveRagConfig };
 
   // Call the single RAG answer implementation over internal HTTP. Time the
   // whole AI turn for the trace's end-to-end latency.
@@ -331,6 +339,7 @@ function buildProxyStream(
       finalContext: captured.trace?.final_context ?? null,
       model,
       response: captured.answer ?? "",
+      refused: Boolean(captured.refused),
       tokenUsage: captured.usage ?? null,
       costEstimate: cost,
       latencyMs: Date.now() - ctx.turnStartedAt,

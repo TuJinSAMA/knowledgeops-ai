@@ -24,9 +24,14 @@ vi.mock("./authz", () => ({
 
 const createKnowledgeBaseMock = vi.fn();
 const deleteKnowledgeBaseMock = vi.fn();
+const getKnowledgeBaseMock = vi.fn();
+const updateKnowledgeBaseRagConfigMock = vi.fn();
 vi.mock("./knowledge-base", () => ({
   createKnowledgeBase: (...args: unknown[]) => createKnowledgeBaseMock(...args),
   deleteKnowledgeBase: (...args: unknown[]) => deleteKnowledgeBaseMock(...args),
+  getKnowledgeBase: (...args: unknown[]) => getKnowledgeBaseMock(...args),
+  updateKnowledgeBaseRagConfig: (...args: unknown[]) =>
+    updateKnowledgeBaseRagConfigMock(...args),
 }));
 
 const recordAuditMock = vi.fn();
@@ -34,6 +39,7 @@ vi.mock("./audit", () => ({
   AUDIT_ACTIONS: {
     KNOWLEDGE_BASE_CREATE: "knowledge-base.create",
     KNOWLEDGE_BASE_DELETE: "knowledge-base.delete",
+    KNOWLEDGE_BASE_UPDATE_CONFIG: "knowledge-base.update-config",
   },
   recordAudit: (...args: unknown[]) => recordAuditMock(...args),
 }));
@@ -53,6 +59,7 @@ vi.mock("next/navigation", () => ({
 import {
   createKnowledgeBaseAction,
   deleteKnowledgeBaseAction,
+  updateKnowledgeBaseRagConfigAction,
 } from "./knowledge-base-actions";
 
 const SLUG = "acme";
@@ -182,5 +189,96 @@ describe("deleteKnowledgeBaseAction", () => {
 
     expect(result.errorCode).toBe("KNOWLEDGE_BASE_NOT_FOUND");
     expect(redirectMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("updateKnowledgeBaseRagConfigAction", () => {
+  it("saves validated RAG config, scopes to workspace, and records audit", async () => {
+    requireWorkspaceMemberBySlugMock.mockResolvedValue({
+      workspaceId: WORKSPACE_ID,
+      user: { id: "user-1" },
+      role: "ADMIN",
+    });
+    getKnowledgeBaseMock.mockResolvedValue({
+      id: KB_ID,
+      name: "Docs",
+      ragConfig: null,
+    });
+    updateKnowledgeBaseRagConfigMock.mockResolvedValue(true);
+
+    const res = await updateKnowledgeBaseRagConfigAction(
+      SLUG,
+      KB_ID,
+      {},
+      formDataOf({
+        topK: "6",
+        retrievalMode: "hybrid",
+        minScore: "0.35",
+        reranker: "heuristic",
+      }),
+    );
+
+    expect(res).toEqual({ ok: true });
+    expect(updateKnowledgeBaseRagConfigMock).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      KB_ID,
+      {
+        topK: 6,
+        retrievalMode: "hybrid",
+        minScore: 0.35,
+        reranker: "heuristic",
+      },
+    );
+    expect(recordAuditMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workspaceId: WORKSPACE_ID,
+        actorId: "user-1",
+        action: "knowledge-base.update-config",
+        target: { type: "knowledge_base", id: KB_ID },
+        metadata: expect.objectContaining({
+          source: "manual",
+          previous_config: null,
+        }),
+      }),
+    );
+  });
+
+  it("resets ragConfig to null when intent=reset", async () => {
+    requireWorkspaceMemberBySlugMock.mockResolvedValue({
+      workspaceId: WORKSPACE_ID,
+      user: { id: "user-1" },
+      role: "OWNER",
+    });
+    getKnowledgeBaseMock.mockResolvedValue({
+      id: KB_ID,
+      name: "Docs",
+      ragConfig: { topK: 8 },
+    });
+    updateKnowledgeBaseRagConfigMock.mockResolvedValue(true);
+
+    const res = await updateKnowledgeBaseRagConfigAction(
+      SLUG,
+      KB_ID,
+      {},
+      formDataOf({ intent: "reset", topK: "invalid-ignored-on-reset" }),
+    );
+
+    expect(res).toEqual({ ok: true });
+    expect(updateKnowledgeBaseRagConfigMock).toHaveBeenCalledWith(
+      WORKSPACE_ID,
+      KB_ID,
+      null,
+    );
+  });
+
+  it("rejects out-of-range values before touching the guard", async () => {
+    const res = await updateKnowledgeBaseRagConfigAction(
+      SLUG,
+      KB_ID,
+      {},
+      formDataOf({ minScore: "2.5" }),
+    );
+    expect(res).toEqual({ errorCode: "RAG_CONFIG_INVALID" });
+    expect(requireWorkspaceMemberBySlugMock).not.toHaveBeenCalled();
   });
 });

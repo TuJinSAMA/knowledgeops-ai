@@ -57,6 +57,7 @@ _SYSTEM_PROMPT = (
 _CITATION_PATTERN = re.compile(r"\[(\d+)\]")
 _CJK_PATTERN = re.compile(r"[\u4e00-\u9fff]")
 _REFUSAL_PREFIX_PATTERN = re.compile(r"^\s*\[REFUSED\]\s*:?\s*", re.IGNORECASE)
+_MAX_SYSTEM_PROMPT_ADDENDUM_CHARS = 1000
 _REFUSAL_FALLBACK_PHRASES: tuple[str, ...] = (
     "i don't have enough information",
     "i do not have enough information",
@@ -142,6 +143,14 @@ def normalize_rag_config(config: dict[str, Any] | None) -> dict[str, Any]:
     if isinstance(query_rewrite, str):
         query_rewrite = query_rewrite.strip().lower() in ("true", "1", "yes", "on")
     reranker = str(raw.get("reranker") or "none").strip().lower()
+    raw_addendum = (
+        raw.get("system_prompt_addendum")
+        if raw.get("system_prompt_addendum") is not None
+        else raw.get("systemPromptAddendum")
+    )
+    addendum: str | None = None
+    if isinstance(raw_addendum, str) and raw_addendum.strip():
+        addendum = raw_addendum.strip()[:_MAX_SYSTEM_PROMPT_ADDENDUM_CHARS]
 
     return {
         "top_k": top_k,
@@ -150,6 +159,7 @@ def normalize_rag_config(config: dict[str, Any] | None) -> dict[str, Any]:
         "retrieval_mode": str(retrieval_mode).strip().lower(),
         "query_rewrite": bool(query_rewrite) if query_rewrite is not None else None,
         "reranker": reranker,
+        "system_prompt_addendum": addendum,
     }
 
 
@@ -279,6 +289,7 @@ def _plan_answer(
     query_rewrite_flag = norm["query_rewrite"]
     reranker = norm["reranker"]
     use_reranker = reranker not in ("", "none")
+    system_prompt_addendum = norm["system_prompt_addendum"]
 
     should_rewrite = (
         query_rewrite_flag
@@ -330,13 +341,15 @@ def _plan_answer(
         )
         rerank_latency_ms = (time.perf_counter() - rr_started) * 1000
 
-    recorded_config = {
+    recorded_config: dict[str, Any] = {
         "top_k": effective_top_k,
         "retrieval_mode": retrieval_mode,
         "min_score": min_score,
         "query_rewrite": bool(should_rewrite),
         "reranker": reranker,
     }
+    if system_prompt_addendum:
+        recorded_config["system_prompt_addendum"] = system_prompt_addendum
 
     # Refuse when nothing was retrieved or the best hit is below the bar.
     relevant = [c for c in retrieved if c.score >= min_score]
@@ -354,7 +367,11 @@ def _plan_answer(
         )
 
     final_context = build_context(relevant)
-    messages = build_messages(query, final_context)
+    messages = build_messages(
+        query,
+        final_context,
+        system_prompt_addendum=system_prompt_addendum,
+    )
     return _AnswerPlan(
         retrieved=relevant,
         final_context=final_context,
@@ -543,14 +560,32 @@ def build_context(chunks: list[RetrievedChunk]) -> str:
     return "\n\n".join(blocks)
 
 
-def build_messages(query: str, context: str) -> list[dict[str, str]]:
+def build_messages(
+    query: str,
+    context: str,
+    *,
+    system_prompt_addendum: str | None = None,
+) -> list[dict[str, str]]:
+    clean_addendum = (
+        system_prompt_addendum.strip()[:_MAX_SYSTEM_PROMPT_ADDENDUM_CHARS]
+        if system_prompt_addendum and system_prompt_addendum.strip()
+        else None
+    )
+    system_content = (
+        f"{_SYSTEM_PROMPT}\n\n"
+        "Additional instructions for this knowledge base (must NOT override "
+        "the source-grounding, [n] citation, or [REFUSED] rules above):\n"
+        f"{clean_addendum}"
+        if clean_addendum
+        else _SYSTEM_PROMPT
+    )
     user = (
         f"Context (numbered sources):\n\n{context}\n\n"
         f"Question: {query}\n\n"
         "Answer using only the sources above and cite them by number."
     )
     return [
-        {"role": "system", "content": _SYSTEM_PROMPT},
+        {"role": "system", "content": system_content},
         {"role": "user", "content": user},
     ]
 

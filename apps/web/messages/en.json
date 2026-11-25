@@ -57,7 +57,16 @@
     "helpful": "helpful",
     "notHelpful": "not helpful",
     "auditPrompt": "Looking for the activity trail?",
-    "openAudit": "Open the audit log"
+    "openAudit": "Open the audit log",
+    "knowledgeGaps": {
+      "title": "Knowledge gap insights",
+      "subtitle": "Top questions refused due to insufficient sources over the last {days} days, helping you close blind spots proactively.",
+      "refusedCount": "{count, plural, =1 {# refusal} other {# refusals}}",
+      "missingReports": "{count, plural, =1 {# open missing-knowledge report} other {# open missing-knowledge reports}}",
+      "none": "No insufficient-knowledge refusals recorded in the last 30 days.",
+      "inspectTrace": "View trace",
+      "uploadDocs": "Upload docs →"
+    }
   },
   "chat": {
     "title": "Assistant",
@@ -113,17 +122,54 @@
     "delete": "Delete knowledge base",
     "upload": "Upload a document",
     "acceptedFiles": "Markdown, plain text, or PDF.",
+    "acceptedFilesBatch": "Select or drag & drop one or more Markdown (.md), plain text (.txt), or PDF (.pdf) files.",
     "uploading": "Uploading…",
+    "uploadingBatch": "Uploading ({current}/{total})…",
     "uploadFailed": "Upload failed. Please try again.",
     "uploadFailedStatus": "Upload failed ({status})",
+    "actionFailed": "Action failed. Please try again.",
     "refresh": "Refresh",
     "noDocuments": "No documents yet.",
     "chunks": "{count, plural, =1 {# chunk} other {# chunks}}",
+    "inspectChunks": "Chunks",
+    "retryIngest": "Retry",
+    "replaceDoc": "Replace",
+    "deleteDoc": "Delete",
+    "deleteDocConfirm": "Delete document \"{title}\" and all of its chunks? This cannot be undone.",
+    "chunkInspector": {
+      "updatedAt": "Last updated {date}",
+      "mimeType": "MIME type",
+      "fileSize": "File size",
+      "totalChunks": "Total chunks",
+      "totalTokens": "Est. tokens",
+      "searchPlaceholder": "Search inside chunks…",
+      "search": "Search",
+      "clearSearch": "Clear",
+      "chunksHeading": "Document chunks ({count})",
+      "matchingChunks": "Matching chunks ({matched} / {total})",
+      "noMatchingChunks": "No chunks match this search query.",
+      "emptyChunks": "No chunks were generated for this document.",
+      "pendingIngestion": "This document is queued or being ingested. Chunks will appear once ingestion finishes.",
+      "tokens": "{count} tokens",
+      "copyId": "ID",
+      "copied": "Copied"
+    },
     "status": {
       "PENDING": "Pending",
       "PROCESSING": "Processing",
       "INGESTED": "Ingested",
       "FAILED": "Failed"
+    },
+    "ragConfig": {
+      "title": "Live RAG configuration",
+      "description": "Active retrieval and generation parameters used by real-time chat for this knowledge base. You can also promote winning configs directly from an evaluation run.",
+      "customActive": "Custom config active",
+      "systemDefault": "System defaults",
+      "inheritDefault": "Inherit system default",
+      "save": "Save live config",
+      "saving": "Saving…",
+      "resetDefaults": "Reset to defaults",
+      "saved": "Saved"
     }
   },
   "evaluations": {
@@ -185,6 +231,7 @@
     "runDescription": "Run this dataset against a RAG configuration. The run is queued for the evaluation worker, which evaluates every case and reports per-case and summary metrics.",
     "chunkSize": "Chunk size",
     "topK": "Top-k",
+    "minScore": "Minimum relevance score (0–1)",
     "retrievalMode": "Retrieval mode",
     "retrievalModeHybrid": "Hybrid (Vector + Keyword RRF)",
     "retrievalModeVector": "Dense vector only",
@@ -199,7 +246,15 @@
     "rerankerHeuristic": "Heuristic cross-feature reranker",
     "rerankerLlm": "LLM passage reranker",
     "promptVersion": "Prompt version",
+    "systemPromptAddendum": "Domain instructions (System Prompt Addendum)",
+    "systemPromptAddendumPlaceholder": "e.g. Use concise bullet points; if pricing is missing, direct users to sales@acme.example.",
     "useLlmJudge": "Enable LLM-as-a-judge semantic scoring & rationale",
+    "liveBadge": "Live",
+    "liveDeployment": "Live deployment",
+    "liveOnKnowledgeBase": "Live on \"{name}\"",
+    "promoteConfigButton": "Promote to \"{name}\"",
+    "promoteConfigConfirm": "Promote this run's RAG configuration to be the live configuration for knowledge base \"{name}\"? Real-time chat will immediately use it.",
+    "promotingConfig": "Promoting…",
     "addCaseBeforeRun": "Add at least one case before running an evaluation",
     "queuing": "Queuing…",
     "runEvaluation": "Run evaluation",
@@ -317,6 +372,8 @@
     "when": "When",
     "empty": "(empty)",
     "error": "Error",
+    "refusedShort": "Refused",
+    "refusedBadge": "Refused · insufficient knowledge",
     "back": "← All traces",
     "detail": "Answer trace",
     "question": "Question",
@@ -335,7 +392,28 @@
     "keywordScore": "kw {score}",
     "finalContext": "Final context sent to the model",
     "noContext": "No context was assembled (refusal or error).",
-    "response": "Model response"
+    "response": "Model response",
+    "filters": {
+      "knowledgeBase": "Knowledge base",
+      "all": "All",
+      "status": "Status",
+      "statusLabels": {
+        "ALL": "All outcomes",
+        "OK": "Answered",
+        "REFUSED": "Refused (low confidence)",
+        "ERROR": "Error"
+      },
+      "minLatency": "Min latency",
+      "anyLatency": "Any latency",
+      "search": "Search query",
+      "searchPlaceholder": "Search question or rewritten query…",
+      "apply": "Filter",
+      "reset": "Reset",
+      "noMatches": "No traces match the selected filters.",
+      "paginationSummary": "Showing {from}–{to} of {total} traces",
+      "prevPage": "← Previous",
+      "nextPage": "Next →"
+    }
   },
   "usage": {
     "title": "Usage & quotas",
@@ -373,10 +451,13 @@
     "actionLabels": {
       "knowledge-base": {
         "create": "Created knowledge base",
-        "delete": "Deleted knowledge base"
+        "delete": "Deleted knowledge base",
+        "update-config": "Updated knowledge base live config"
       },
       "document": {
         "upload": "Uploaded document",
+        "replace": "Replaced document version",
+        "retry-ingest": "Retried document ingestion",
         "delete": "Deleted document"
       },
       "member": {
@@ -412,8 +493,11 @@
     "WORKSPACE_NAME_REQUIRED": "Workspace name is required.",
     "KNOWLEDGE_BASE_NAME_REQUIRED": "Knowledge base name is required.",
     "KNOWLEDGE_BASE_NOT_FOUND": "Knowledge base not found.",
+    "RAG_CONFIG_INVALID": "Invalid RAG configuration (Top-k must be 1–20, minimum score 0–1, and instructions up to 1,000 characters).",
     "DATASET_NAME_REQUIRED": "Dataset name is required.",
     "DATASET_NOT_FOUND": "Dataset not found.",
+    "DATASET_NO_KNOWLEDGE_BASE": "This dataset is not bound to a knowledge base, so its configuration cannot be promoted.",
+    "EVALUATION_RUN_NOT_FOUND": "Evaluation run not found.",
     "EVALUATION_CASE_QUESTION_REQUIRED": "Question is required.",
     "EVALUATION_CASE_NOT_FOUND": "Case not found.",
     "EVALUATION_CREATE_FAILED": "Failed to create the dataset.",
@@ -429,6 +513,9 @@
     "UPLOAD_FILE_MISSING": "Please choose a file to upload.",
     "UPLOAD_UNSUPPORTED_TYPE": "Unsupported file type. Allowed: Markdown (.md), plain text (.txt), or PDF (.pdf).",
     "UPLOAD_FILE_EMPTY": "File is empty.",
-    "UPLOAD_FILE_TOO_LARGE": "File exceeds the maximum allowed upload size."
+    "UPLOAD_FILE_TOO_LARGE": "File exceeds the maximum allowed upload size.",
+    "DOCUMENT_NOT_FOUND": "Document not found.",
+    "DOCUMENT_BUSY_PROCESSING": "This document is currently being ingested. Please try again in a moment.",
+    "DOCUMENT_RETRY_NOT_ALLOWED": "Only failed documents can be retried."
   }
 }

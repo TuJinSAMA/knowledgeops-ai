@@ -109,6 +109,9 @@ beforeEach(() => {
 describe("recordAudit", () => {
   it("defines FEEDBACK_PROMOTE_CASE action constant", () => {
     expect(AUDIT_ACTIONS.FEEDBACK_PROMOTE_CASE).toBe("feedback.promote-case");
+    expect(AUDIT_ACTIONS.KNOWLEDGE_BASE_UPDATE_CONFIG).toBe(
+      "knowledge-base.update-config",
+    );
   });
 
   it("inserts a workspace-scoped entry with actor/action/target/metadata", async () => {

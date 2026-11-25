@@ -208,3 +208,50 @@ def test_generate_answer_records_rewritten_query_and_forwards_retrieval_mode(mon
     assert res.rewritten_query is not None
     assert "Pro" in captured_call["query"]
     assert res.to_dict()["trace"]["rewritten_query"] == res.rewritten_query
+
+
+def test_system_prompt_addendum_is_normalized_truncated_and_appended(monkeypatch):
+    from app.rag import answer as answer_mod
+
+    cfg_camel = normalize_rag_config({"systemPromptAddendum": "  Use concise bullet points.  "})
+    assert cfg_camel["system_prompt_addendum"] == "Use concise bullet points."
+
+    cfg_overlong = normalize_rag_config({"system_prompt_addendum": "x" * 1500})
+    assert len(cfg_overlong["system_prompt_addendum"]) == 1000
+
+    cfg_blank = normalize_rag_config({"systemPromptAddendum": "   "})
+    assert cfg_blank["system_prompt_addendum"] is None
+
+    msgs = build_messages(
+        "退款期多久？",
+        "[1] 7 天内退款。",
+        system_prompt_addendum="若无法回答请联系 support@acme.example",
+    )
+    sys_msg = msgs[0]["content"]
+    assert "[REFUSED]" in sys_msg
+    assert "must NOT override" in sys_msg
+    assert "support@acme.example" in sys_msg
+
+    captured_messages = []
+
+    class _SpyLLM(_StubRefusalLLM):
+        def complete(self, messages):
+            captured_messages.extend(messages)
+            return super().complete(messages)
+
+    monkeypatch.setattr(
+        answer_mod,
+        "retrieve",
+        lambda *a, **kw: [_chunk("c1", "d1", 0, "7 天内退款。")],
+    )
+    res = generate_answer(
+        None,
+        workspace_id="ws",
+        knowledge_base_id="kb",
+        query="退款期多久？",
+        config={"systemPromptAddendum": "请保持客服礼貌语气"},
+        provider=_SpyLLM("付款后 7 天内可退款 [1]。"),
+    )
+    assert "请保持客服礼貌语气" in captured_messages[0]["content"]
+    assert res.retrieval_config["system_prompt_addendum"] == "请保持客服礼貌语气"
+

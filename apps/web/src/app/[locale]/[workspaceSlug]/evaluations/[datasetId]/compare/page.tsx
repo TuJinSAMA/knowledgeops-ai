@@ -2,6 +2,8 @@ import { Link } from "@/i18n/navigation";
 import { getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 
+import { PromoteRunConfigButton } from "@/components/evaluation/PromoteRunConfigButton";
+import { hasMinRole } from "@/lib/authz";
 import {
   type EvaluationRunSummary,
   getEvaluationDataset,
@@ -14,6 +16,8 @@ import {
   RUN_METRIC_KEYS,
   summaryMetric,
 } from "@/lib/evaluation-format";
+import { getKnowledgeBase } from "@/lib/knowledge-base";
+import { areRagConfigsEqual } from "@/lib/rag-config";
 import { requireUser } from "@/lib/session";
 import { getUserWorkspaceBySlug } from "@/lib/workspace";
 
@@ -86,7 +90,13 @@ export default async function CompareRunsPage({
     notFound();
   }
 
-  const runs = await listEvaluationRuns(workspace.id, datasetId);
+  const canManage = hasMinRole(workspace.role, "ADMIN");
+  const [runs, boundKb] = await Promise.all([
+    listEvaluationRuns(workspace.id, datasetId),
+    dataset.knowledgeBaseId
+      ? getKnowledgeBase(workspace.id, dataset.knowledgeBaseId)
+      : Promise.resolve(null),
+  ]);
 
   const aId = typeof sp.a === "string" ? sp.a : runs[1]?.id;
   const bId = typeof sp.b === "string" ? sp.b : runs[0]?.id;
@@ -188,6 +198,48 @@ export default async function CompareRunsPage({
                     <td className="px-4 py-3">{t(`statusLabels.${validB.status}`)}</td>
                     <td className="px-4 py-3 text-neutral-400">—</td>
                   </tr>
+                  {boundKb && (
+                    <tr className="border-b border-neutral-100 dark:border-neutral-900">
+                      <td className="px-4 py-3 text-neutral-500">
+                        {t("liveDeployment")}
+                      </td>
+                      <td className="px-4 py-3">
+                        {validA.status === "COMPLETED" ? (
+                          <PromoteRunConfigButton
+                            workspaceSlug={workspaceSlug}
+                            datasetId={datasetId}
+                            runId={validA.id}
+                            knowledgeBaseName={boundKb.name}
+                            isLive={areRagConfigsEqual(
+                              validA.config,
+                              boundKb.ragConfig,
+                            )}
+                            canManage={canManage}
+                          />
+                        ) : (
+                          <span className="text-neutral-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3">
+                        {validB.status === "COMPLETED" ? (
+                          <PromoteRunConfigButton
+                            workspaceSlug={workspaceSlug}
+                            datasetId={datasetId}
+                            runId={validB.id}
+                            knowledgeBaseName={boundKb.name}
+                            isLive={areRagConfigsEqual(
+                              validB.config,
+                              boundKb.ragConfig,
+                            )}
+                            canManage={canManage}
+                          />
+                        ) : (
+                          <span className="text-neutral-400">—</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-3 text-neutral-400">—</td>
+                    </tr>
+                  )}
                   {RUN_METRIC_KEYS.map((key) => {
                     const a = summaryMetric(validA.summaryMetrics, key);
                     const b = summaryMetric(validB.summaryMetrics, key);

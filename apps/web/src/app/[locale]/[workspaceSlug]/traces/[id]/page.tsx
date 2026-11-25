@@ -3,7 +3,7 @@ import { getTranslations } from "next-intl/server";
 import { notFound } from "next/navigation";
 
 import { requireUser } from "@/lib/session";
-import { getTrace, type TraceRetrievedChunk } from "@/lib/trace";
+import { getTraceDetail, type TraceRetrievedChunk } from "@/lib/trace";
 import { getUserWorkspaceBySlug } from "@/lib/workspace";
 
 export const dynamic = "force-dynamic";
@@ -31,10 +31,11 @@ export default async function TraceDetailPage({
     notFound();
   }
 
-  const trace = await getTrace(workspace.id, id);
-  if (!trace) {
+  const detail = await getTraceDetail(workspace.id, id);
+  if (!detail) {
     notFound();
   }
+  const { trace, knowledgeBaseId, knowledgeBaseName, documentTitles } = detail;
 
   const chunks = (trace.retrievedChunks ?? []) as TraceRetrievedChunk[];
   const usage = trace.tokenUsage ?? {};
@@ -51,12 +52,30 @@ export default async function TraceDetailPage({
         {t("back")}
       </Link>
 
-      <h1 className="mt-3 text-2xl font-semibold tracking-tight">
-        {t("detail")}
-      </h1>
+      <div className="mt-3 flex flex-wrap items-center gap-2.5">
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {t("detail")}
+        </h1>
+        {trace.refused && !trace.error && (
+          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-800 dark:bg-amber-950 dark:text-amber-300">
+            {t("refusedBadge")}
+          </span>
+        )}
+      </div>
       <p className="mt-1 text-xs text-neutral-500">
         {formatDate(trace.createdAt)} ·{" "}
         <code className="font-mono">{trace.id}</code>
+        {knowledgeBaseId && knowledgeBaseName && (
+          <>
+            {" · "}
+            <Link
+              href={`/${workspaceSlug}/knowledge-bases/${knowledgeBaseId}`}
+              className="underline-offset-4 hover:underline"
+            >
+              {knowledgeBaseName}
+            </Link>
+          </>
+        )}
       </p>
 
       {trace.error && (
@@ -133,47 +152,74 @@ export default async function TraceDetailPage({
           </p>
         ) : (
           <ul className="mt-3 space-y-3">
-            {chunks.map((c, i) => (
-              <li
-                key={c.chunkId ?? i}
-                className="rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-800"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium">
-                    {t("document", { index: i + 1 })}{" "}
-                    <code className="font-mono text-xs">{c.documentId}</code>
-                    {c.chunkIndex != null && (
-                      <span className="text-neutral-500">
-                        {" "}
-                        · {t("chunk", { index: c.chunkIndex })}
-                      </span>
-                    )}
-                  </span>
-                  <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
-                    {typeof c.vectorScore === "number" && (
-                      <span>
-                        {t("vectorScore", { score: c.vectorScore.toFixed(4) })}
-                      </span>
-                    )}
-                    {typeof c.keywordScore === "number" && (
-                      <span>
-                        {t("keywordScore", { score: c.keywordScore.toFixed(4) })}
-                      </span>
-                    )}
-                    {typeof c.score === "number" && (
-                      <span className="font-medium text-neutral-600 dark:text-neutral-300">
-                        {t("score", { score: c.score.toFixed(4) })}
-                      </span>
-                    )}
+            {chunks.map((c, i) => {
+              const docTitle = documentTitles.get(c.documentId) ?? null;
+              const chunkHref =
+                knowledgeBaseId && docTitle
+                  ? `/${workspaceSlug}/knowledge-bases/${knowledgeBaseId}/documents/${c.documentId}${
+                      c.chunkIndex != null ? `#chunk-${c.chunkIndex}` : ""
+                    }`
+                  : null;
+              return (
+                <li
+                  key={c.chunkId ?? i}
+                  className="rounded-lg border border-neutral-200 p-3 text-sm dark:border-neutral-800"
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-medium">
+                      {chunkHref ? (
+                        <Link
+                          href={chunkHref}
+                          className="underline-offset-4 hover:underline"
+                        >
+                          [{i + 1}] {docTitle}
+                          {c.chunkIndex != null
+                            ? ` · ${t("chunk", { index: c.chunkIndex })}`
+                            : ""}
+                        </Link>
+                      ) : (
+                        <>
+                          {t("document", { index: i + 1 })}{" "}
+                          <code className="font-mono text-xs">
+                            {c.documentId}
+                          </code>
+                          {c.chunkIndex != null && (
+                            <span className="text-neutral-500">
+                              {" "}
+                              · {t("chunk", { index: c.chunkIndex })}
+                            </span>
+                          )}
+                        </>
+                      )}
+                    </span>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-400">
+                      {typeof c.vectorScore === "number" && (
+                        <span>
+                          {t("vectorScore", { score: c.vectorScore.toFixed(4) })}
+                        </span>
+                      )}
+                      {typeof c.keywordScore === "number" && (
+                        <span>
+                          {t("keywordScore", {
+                            score: c.keywordScore.toFixed(4),
+                          })}
+                        </span>
+                      )}
+                      {typeof c.score === "number" && (
+                        <span className="font-medium text-neutral-600 dark:text-neutral-300">
+                          {t("score", { score: c.score.toFixed(4) })}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                </div>
-                {c.snippet && (
-                  <p className="mt-2 whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">
-                    {c.snippet}
-                  </p>
-                )}
-              </li>
-            ))}
+                  {c.snippet && (
+                    <p className="mt-2 whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">
+                      {c.snippet}
+                    </p>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>

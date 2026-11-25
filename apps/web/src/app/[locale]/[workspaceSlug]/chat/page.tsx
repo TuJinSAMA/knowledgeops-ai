@@ -46,6 +46,7 @@ export default async function ChatPage({
           <ChatPanel
             chatEndpoint={chatEndpoint}
             traceBasePath={`/${locale}/${workspaceSlug}/traces`}
+            knowledgeBasesBasePath={`/${locale}/${workspaceSlug}/knowledge-bases`}
             workspaceSlug={workspaceSlug}
             knowledgeBases={knowledgeBases.map((kb) => ({
               id: kb.id,

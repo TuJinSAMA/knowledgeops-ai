@@ -9,6 +9,7 @@ import {
   evaluationRuns,
   ingestionJobs,
   knowledgeBases,
+  ragTraces,
 } from "@/db/schema";
 
 export type EvaluationRunStatus =
@@ -223,7 +224,9 @@ export type EvaluationCaseRecord = {
   requiredFacts: string[] | null;
   tags: string[] | null;
   sourceFeedbackId?: string | null;
+  sourceTraceId?: string | null;
   createdAt: Date;
+  updatedAt?: Date;
 };
 
 /**
@@ -249,19 +252,23 @@ export async function listEvaluationCases(
       requiredFacts: evaluationCases.requiredFacts,
       tags: evaluationCases.tags,
       sourceFeedbackId: answerFeedback.id,
+      sourceTraceId: ragTraces.id,
       createdAt: evaluationCases.createdAt,
+      updatedAt: evaluationCases.updatedAt,
     })
     .from(evaluationCases)
     .leftJoin(
       answerFeedback,
       eq(answerFeedback.promotedCaseId, evaluationCases.id),
     )
+    .leftJoin(ragTraces, eq(ragTraces.promotedCaseId, evaluationCases.id))
     .where(eq(evaluationCases.datasetId, datasetId))
     .orderBy(evaluationCases.createdAt);
 
   return rows.map((row) => ({
     ...row,
     sourceFeedbackId: row.sourceFeedbackId ?? null,
+    sourceTraceId: row.sourceTraceId ?? null,
   }));
 }
 
@@ -339,6 +346,116 @@ export async function deleteEvaluationCase(
   return deleted.length > 0;
 }
 
+export const MAX_IMPORT_CASES = 200;
+
+/**
+ * Update an existing case in-place, preserving `case.id` (and any inbound
+ * `promoted_case_id` links from feedback or traces). Verifies both dataset and
+ * case belong to `workspaceId`.
+ */
+export async function updateEvaluationCase(
+  workspaceId: string,
+  datasetId: string,
+  caseId: string,
+  params: CreateEvaluationCaseParams,
+): Promise<EvaluationCaseRecord | null> {
+  const dataset = await getEvaluationDataset(workspaceId, datasetId);
+  if (!dataset) {
+    return null;
+  }
+  const question = params.question.trim();
+  if (!question) {
+    throw new Error("Question cannot be empty");
+  }
+
+  const now = new Date();
+  const [updated] = await db
+    .update(evaluationCases)
+    .set({
+      question,
+      expectedAnswer: params.expectedAnswer?.trim() || null,
+      expectedSourceDocuments: params.expectedSourceDocuments ?? null,
+      expectedChunks: params.expectedChunks ?? null,
+      requiredFacts: params.requiredFacts ?? null,
+      tags: params.tags ?? null,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(evaluationCases.id, caseId),
+        eq(evaluationCases.datasetId, datasetId),
+      ),
+    )
+    .returning();
+
+  if (!updated) {
+    return null;
+  }
+
+  await db
+    .update(evaluationDatasets)
+    .set({ updatedAt: now })
+    .where(eq(evaluationDatasets.id, datasetId));
+
+  return updated;
+}
+
+/**
+ * Bulk-insert validated evaluation cases into a dataset inside one transaction.
+ * Returns null when the dataset does not exist in `workspaceId`.
+ */
+export async function importEvaluationCases(
+  workspaceId: string,
+  datasetId: string,
+  casesInput: CreateEvaluationCaseParams[],
+): Promise<{ importedCount: number } | null> {
+  const dataset = await getEvaluationDataset(workspaceId, datasetId);
+  if (!dataset) {
+    return null;
+  }
+  if (casesInput.length === 0) {
+    return { importedCount: 0 };
+  }
+  if (casesInput.length > MAX_IMPORT_CASES) {
+    throw new Error(`Cannot import more than ${MAX_IMPORT_CASES} cases at once`);
+  }
+
+  const rowsToInsert = casesInput.map((item) => {
+    const question = item.question.trim();
+    if (!question) {
+      throw new Error("Every imported case must have a non-empty question");
+    }
+    return {
+      datasetId,
+      question,
+      expectedAnswer: item.expectedAnswer?.trim() || null,
+      expectedSourceDocuments:
+        item.expectedSourceDocuments && item.expectedSourceDocuments.length > 0
+          ? item.expectedSourceDocuments
+          : null,
+      expectedChunks:
+        item.expectedChunks && item.expectedChunks.length > 0
+          ? item.expectedChunks
+          : null,
+      requiredFacts:
+        item.requiredFacts && item.requiredFacts.length > 0
+          ? item.requiredFacts
+          : null,
+      tags: item.tags && item.tags.length > 0 ? item.tags : null,
+    };
+  });
+
+  await db.transaction(async (tx) => {
+    await tx.insert(evaluationCases).values(rowsToInsert);
+    await tx
+      .update(evaluationDatasets)
+      .set({ updatedAt: new Date() })
+      .where(eq(evaluationDatasets.id, datasetId));
+  });
+
+  return { importedCount: rowsToInsert.length };
+}
+
 // ------------------------------------------------------------
 // Runs + the RUN_EVALUATION enqueue contract
 // ------------------------------------------------------------
@@ -349,9 +466,11 @@ export type EvaluationRunConfig = {
   chunkSize?: number;
   topK?: number;
   retrievalMode?: "hybrid" | "vector" | "keyword";
+  minScore?: number;
   queryRewrite?: boolean;
   embeddingModel?: string;
   reranker?: string;
+  systemPromptAddendum?: string;
   promptVersion?: string;
   useLlmJudge?: boolean;
   [key: string]: unknown;

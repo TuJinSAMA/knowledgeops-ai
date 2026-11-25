@@ -87,12 +87,15 @@ function parseBlock(block: string): { event: string; data: unknown } {
 export function ChatPanel({
   chatEndpoint,
   traceBasePath,
+  knowledgeBasesBasePath,
   workspaceSlug,
   knowledgeBases,
 }: {
   chatEndpoint: string;
-  // Base path for trace deep-links, e.g. `/acme/traces`. A trace id is appended.
+  // Base path for trace deep-links, e.g. `/en/acme/traces`. A trace id is appended.
   traceBasePath: string;
+  // Base path for document/chunk deep-links, e.g. `/en/acme/knowledge-bases`.
+  knowledgeBasesBasePath: string;
   // Workspace slug, used when submitting answer feedback.
   workspaceSlug: string;
   knowledgeBases: KnowledgeBaseOption[];
@@ -286,7 +289,9 @@ export function ChatPanel({
             <MessageBubble
               key={m.id}
               message={m}
+              knowledgeBaseId={selectedKbId}
               traceBasePath={traceBasePath}
+              knowledgeBasesBasePath={knowledgeBasesBasePath}
               workspaceSlug={workspaceSlug}
             />
           ))
@@ -327,11 +332,15 @@ export function ChatPanel({
 
 function MessageBubble({
   message,
+  knowledgeBaseId,
   traceBasePath,
+  knowledgeBasesBasePath,
   workspaceSlug,
 }: {
   message: ChatMessage;
+  knowledgeBaseId: string;
   traceBasePath: string;
+  knowledgeBasesBasePath: string;
   workspaceSlug: string;
 }) {
   const t = useTranslations("chat");
@@ -367,28 +376,46 @@ function MessageBubble({
               {t("sources", { count: message.citations.length })}
             </summary>
             <ul className="mt-2 space-y-2">
-              {message.citations.map((c) => (
-                <li
-                  key={c.chunkId}
-                  className="rounded-md border border-neutral-200 bg-white p-2 text-xs dark:border-neutral-800 dark:bg-neutral-950"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="font-medium">
-                      [{c.sourceNumber}] {c.documentTitle ?? c.documentId}
-                    </span>
-                    {typeof c.score === "number" && (
-                      <span className="text-neutral-400">
-                        {t("score", { score: c.score.toFixed(3) })}
-                      </span>
+              {message.citations.map((c) => {
+                const chunkHref =
+                  knowledgeBaseId && c.documentTitle
+                    ? `${knowledgeBasesBasePath}/${knowledgeBaseId}/documents/${c.documentId}${
+                        c.chunkIndex != null ? `#chunk-${c.chunkIndex}` : ""
+                      }`
+                    : null;
+                return (
+                  <li
+                    key={c.chunkId}
+                    className="rounded-md border border-neutral-200 bg-white p-2 text-xs dark:border-neutral-800 dark:bg-neutral-950"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      {chunkHref ? (
+                        <Link
+                          href={chunkHref}
+                          className="font-medium underline-offset-4 hover:underline"
+                        >
+                          [{c.sourceNumber}] {c.documentTitle}
+                          {c.chunkIndex != null ? ` · #${c.chunkIndex}` : ""}
+                        </Link>
+                      ) : (
+                        <span className="font-medium">
+                          [{c.sourceNumber}] {c.documentTitle ?? c.documentId}
+                        </span>
+                      )}
+                      {typeof c.score === "number" && (
+                        <span className="text-neutral-400">
+                          {t("score", { score: c.score.toFixed(3) })}
+                        </span>
+                      )}
+                    </div>
+                    {c.snippet && (
+                      <p className="mt-1 whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">
+                        {c.snippet}
+                      </p>
                     )}
-                  </div>
-                  {c.snippet && (
-                    <p className="mt-1 whitespace-pre-wrap text-neutral-600 dark:text-neutral-400">
-                      {c.snippet}
-                    </p>
-                  )}
-                </li>
-              ))}
+                  </li>
+                );
+              })}
             </ul>
           </details>
         )}

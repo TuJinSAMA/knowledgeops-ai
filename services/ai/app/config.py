@@ -41,6 +41,9 @@ class Settings(BaseSettings):
     # Embedding model used when ai_provider != "fake".
     embedding_model: str = "qwen/qwen3-embedding-8b"
 
+    # Cache computed embeddings in Redis (keyed by model + dimensions + text hash).
+    embedding_cache_enabled: bool = True
+
     # Max texts per embedding API request when batching.
     embedding_batch_size: int = 64
 

@@ -176,6 +176,15 @@ export const workspaceMembers = pgTable(
   ],
 );
 
+export type KnowledgeBaseRagConfig = {
+  topK?: number;
+  retrievalMode?: "hybrid" | "vector" | "keyword";
+  minScore?: number;
+  queryRewrite?: boolean;
+  reranker?: "none" | "heuristic" | "llm";
+  systemPromptAddendum?: string;
+};
+
 // A knowledge base groups documents within a workspace.
 export const knowledgeBases = pgTable(
   "knowledge_bases",
@@ -186,6 +195,7 @@ export const knowledgeBases = pgTable(
       .references(() => workspaces.id, { onDelete: "cascade" }),
     name: text("name").notNull(),
     description: text("description"),
+    ragConfig: jsonb("rag_config").$type<KnowledgeBaseRagConfig>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
@@ -350,6 +360,7 @@ export const ragTraces = pgTable(
     finalContext: text("final_context"),
     model: text("model"),
     response: text("response"),
+    refused: boolean("refused").notNull().default(false),
     // Token counts: prompt_tokens / completion_tokens / total_tokens.
     tokenUsage: jsonb("token_usage").$type<Record<string, number>>(),
     // Estimated USD cost derived from token usage and a per-model price map.
@@ -359,12 +370,23 @@ export const ragTraces = pgTable(
     // Optional per-stage latency from the AI service (e.g. retrieve, generate).
     stageLatencyMs: jsonb("stage_latency_ms").$type<Record<string, number>>(),
     error: text("error"),
+    // Optional link to an evaluation_cases row created by promoting this trace.
+    promotedCaseId: uuid("promoted_case_id").references(
+      (): AnyPgColumn => evaluationCases.id,
+      { onDelete: "set null" },
+    ),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => [
     index("rag_traces_workspace_idx").on(table.workspaceId),
     index("rag_traces_conversation_idx").on(table.conversationId),
     index("rag_traces_message_idx").on(table.messageId),
+    index("rag_traces_workspace_refused_created_idx").on(
+      table.workspaceId,
+      table.refused,
+      table.createdAt,
+    ),
+    index("rag_traces_promoted_case_idx").on(table.promotedCaseId),
   ],
 );
 
@@ -482,6 +504,7 @@ export const evaluationCases = pgTable(
     // Free-form labels (string[]) for slicing results.
     tags: jsonb("tags").$type<string[]>(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
   },
   (table) => [index("evaluation_cases_dataset_idx").on(table.datasetId)],
 );
